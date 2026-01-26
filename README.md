@@ -8,7 +8,7 @@ Skinergy allows multiple users to create and compare skin sets in real time, ble
 
 ---
 
-## ✨ Features
+## Features
 
 - **Skin Collection Management**  
   Upload and track your owned skins using Riot’s Data Dragon (ddragon), along with API integrations and approved scraping sources.  
