@@ -1,23 +1,3 @@
-<<<<<<< HEAD
-# Skinergy Desktop Uploader
-
-This is the source code for the Skinergy desktop app that uploads your League of Legends skins to your Skinergy account.
-
-## Why is this public?
-
-Windows Defender flags PyInstaller executables pretty often. This repo is here so you can verify the code yourself if you dont trust the exe.
-
-## What does it do?
-
-1. Connects to your local League client (127.0.0.1)
-2. Reads your owned skins
-3. Uploads them to skinergy.lol
-
-## Building it yourself
-
-See [BUILD_PYTHON.md](BUILD_PYTHON.md)
-
-=======
 # Skinergy  
 ***Currently in **alpha release**, with core functionality live and ongoing improvements guided by user feedback.***  
 
@@ -55,7 +35,7 @@ Skinergy allows multiple users to create and compare skin sets in real time, ble
 
 ---
 
-## 🚀 Tech Stack
+## Tech Stack
 - **Frontend:** Next.js, React, TailwindCSS  
 - **Backend:** Supabase (PostgreSQL + Realtime)  
 - **Desktop Uploader:** Python (Tkinter)  
@@ -64,16 +44,15 @@ Skinergy allows multiple users to create and compare skin sets in real time, ble
 
 ---
 
-## 🌐 Deployment & SEO
+## Deployment & SEO
 - Deployed on Vercel with the custom domain [skinergy.lol](https://www.skinergy.lol/).  
 
 ---
 
-## 📌 Notes
+## Notes
 - The **Skin Uploader desktop app** will be open sourced within this repo to ensure transparency and user trust.  
 - Currently in **alpha release**, with ongoing improvements guided by user feedback.  
 
 ---
-## 👤 Author
+## Author
 Independently designed, developed, and deployed by **Kenji Berry**.
->>>>>>> 0ed0bea6d1f170b2777a9560c2018845eab4c176
