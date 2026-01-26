@@ -1,0 +1,25 @@
+# Build artifacts
+dist/
+build/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+*.log
+
+# Executables
+*.exe
+
+# Local data files
+skins.json
+skinsLoot.json
+auth_token.json
+pending_code.txt
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,6 @@
+# Skinergy Desktop Uploader dependencies
+requests>=2.32.0
+urllib3>=2.4.0
+
+# Note: tkinter comes with Python
+# Build tool: pip install pyinstaller
