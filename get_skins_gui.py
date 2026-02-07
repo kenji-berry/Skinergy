@@ -12,11 +12,11 @@ import time
 import sys
 import argparse
 import logging
+import tempfile
 from security_config import SecurityConfig, RateLimiter
 
-# Logging setup - finds a writable location for log files
 def _get_log_path():
-    """Returns a writable log file path, preferring user's LocalAppData on Windows"""
+    """Find a writable log file path, preferring LocalAppData on Windows"""
     try:
         # Prefer Windows LocalAppData for per-user logs
         if os.name == 'nt':
@@ -37,15 +37,11 @@ def _get_log_path():
                 base = os.path.dirname(os.path.abspath(__file__))
             return os.path.join(base, 'skin_fetcher.log')
         except Exception:
-            # Last resort: system temp dir
-            import tempfile
             return os.path.join(tempfile.gettempdir(), 'skin_fetcher.log')
 
 
 def _get_data_dir():
-    """Return a writable directory for user data (skins.json etc).
-    Prefer the same per-user folder used for logs. Falls back to script dir or system temp.
-    """
+    """Return a writable directory for user data like skins.json"""
     try:
         data_dir = os.path.dirname(_get_log_path())
         os.makedirs(data_dir, exist_ok=True)
@@ -58,7 +54,6 @@ def _get_data_dir():
                 base = os.path.dirname(os.path.abspath(__file__))
             return base
         except Exception:
-            import tempfile
             return tempfile.gettempdir()
 
 
@@ -67,27 +62,44 @@ def _get_auth_file_path():
     return os.path.join(_get_data_dir(), 'auth_token.json')
 
 
-def _save_auth_token(auth_token, user_id):
-    """Save auth token and user_id to file"""
+def _save_auth_token(auth_token, user_id, expires_in=86400):
+    """Save auth token and user_id to disk with expiry"""
     try:
         auth_file = _get_auth_file_path()
         with open(auth_file, 'w', encoding='utf-8') as f:
             json.dump({
                 'auth_token': auth_token,
                 'user_id': user_id,
-                'saved_at': time.time()
+                'saved_at': time.time(),
+                'expires_at': time.time() + expires_in
             }, f)
     except Exception as e:
         logging.error(f"Failed to save auth token: {e}")
 
 
 def _load_auth_token():
-    """Load auth token and user_id from file"""
+    """Load auth token and user_id from file, checking expiry"""
     try:
         auth_file = _get_auth_file_path()
         if os.path.exists(auth_file):
             with open(auth_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+                
+                # Check if token has expired locally
+                expires_at = data.get('expires_at')
+                if expires_at:
+                    if time.time() > expires_at:
+                        logging.info("Auth token expired locally, clearing")
+                        _clear_auth_token()
+                        return None, None
+                else:
+                    # Legacy format without expires_at - check saved_at + 24 hours
+                    saved_at = data.get('saved_at', 0)
+                    if time.time() > saved_at + 86400:  # 24 hours
+                        logging.info("Auth token expired (legacy check), clearing")
+                        _clear_auth_token()
+                        return None, None
+                
                 return data.get('auth_token'), data.get('user_id')
     except Exception as e:
         logging.error(f"Failed to load auth token: {e}")
@@ -119,7 +131,7 @@ def _load_pending_code():
             # Delete file after reading
             try:
                 os.remove(code_file)
-            except:
+            except Exception:
                 pass
             return code
     except Exception:
@@ -174,63 +186,81 @@ class LeagueSkinFetcher:
     def __init__(self, code_from_args=None):
         self.root = tk.Tk()
         
-        # Set icon before title/geometry (Windows needs this)
-        self._set_window_icon()
-        
+        # Set title BEFORE overrideredirect so taskbar shows the correct name
         self.root.title("Skinergy Uploader")
-        self.root.geometry("500x320")
+        
+        # Remove default Windows title bar for custom one
+        self.root.overrideredirect(True)
+        
+        # Window size and position (center on screen)
+        self.win_width = 480
+        self.win_height = 460
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        x = (screen_w - self.win_width) // 2
+        y = (screen_h - self.win_height) // 2
+        self.root.geometry(f"{self.win_width}x{self.win_height}+{x}+{y}")
         self.root.resizable(False, False)
+        self.root.attributes('-topmost', False)
 
-        # Color scheme matching the website profile page
-        self.bg_color = "#0A0C0E"  # Dark background
-        self.panel_color = "#0A0C0E"  # Panel background
-        self.card_bg = "#1F2937"  # Card background (dark gray)
-        self.primary_color = "#9333EA"  # Purple accent
-        self.success_color = "#10B981"  # Green for success states
-        self.warning_color = "#F59E0B"  # Amber for warnings
-        self.error_color = "#EF4444"  # Red for errors
-        self.text_primary = "#E6EDF3"  # Primary text (light gray)
-        self.text_secondary = "#9CA3AF"  # Secondary text (medium gray)
-        self.border_color = "#1F2937"  # Border color (matches card bg)
+        # Colors
+        self.bg_color = "#111318"
+        self.surface = "#181B22"
+        self.card_bg = "#1C1F27"
+        self.card_border = "#282D38"
+        self.titlebar_bg = "#13151B"
+        self.purple = "#8B5CF6"
+        self.purple_dim = "#7C3AED"
+        self.emerald = "#34D399"
+        self.emerald_dim = "#10B981"
+        self.error_color = "#F87171"
+        self.warning_color = "#FBBF24"
+        self.text_primary = "#F3F4F6"
+        self.text_secondary = "#9CA3AF"
+        self.text_muted = "#6B7280"
+        self.input_bg = "#181B22"
+        self.input_border = "#313845"
+        self.btn_primary = "#8B5CF6"
+        self.btn_primary_hover = "#7C3AED"
+        self.btn_primary_text = "#FFFFFF"
+        self.divider = "#252830"
+        self.hover_bg = "#242830"
 
-        # Font settings
-        self.title_font = ("Segoe UI", 13, "bold")
-        self.body_font = ("Segoe UI", 10)
-        self.small_font = ("Segoe UI", 8)
+        # Fonts
+        self.title_font = ("Bahnschrift SemiBold", 13)
+        self.heading_font = ("Bahnschrift SemiBold", 10)
+        self.body_font = ("Bahnschrift", 9)
+        self.small_font = ("Bahnschrift Light", 8)
+        self.mono_font = ("Consolas", 14)
+        self.label_font = ("Bahnschrift SemiBold", 8)
 
         self.root.configure(bg=self.bg_color)
 
-        # Application state
+        # App state
         self.is_fetching = False
         self.auth_token = None
         self.user_id = None
         self.authorized = False
-        
-        # Progress tracking (0=authorize, 1=fetch, 2=upload, 3=complete)
         self.current_step = 0
-
-        # League client status monitoring
         self.status_monitor_running = True
         self.last_status = None
+        self._drag_start_x = 0
+        self._drag_start_y = 0
 
-        # API configuration and rate limiting
         self.api_endpoints = SecurityConfig.get_api_endpoints()
         self.rate_limiter = RateLimiter(SecurityConfig.MAX_REQUESTS_PER_MINUTE)
         
-        # Register skinergy:// protocol handler (Windows only, when running as EXE)
+        self._load_logo()
+        self._create_and_set_icon()
+        
+        # Register skinergy:// protocol handler (Windows EXE only)
         if os.name == 'nt' and getattr(sys, 'frozen', False):
             _register_protocol_handler()
         
-        # Initialize UI
         self.setup_gui()
-        
-        # Set icon again after window is created (Windows sometimes needs this)
-        self._set_window_icon()
-
-        # Load saved authentication if available
         self.load_persistent_auth()
 
-        # Check for code from web page (legacy)
+        # Check for code from web or protocol handler
         pending_code = _load_pending_code()
         if pending_code:
             code_from_args = pending_code
@@ -258,264 +288,376 @@ class LeagueSkinFetcher:
                 self.code_entry.delete(0, tk.END)
                 self.code_entry.insert(0, code[:8].upper())
 
-        # Start background thread to monitor League client status
         self.start_status_monitoring()
-
         self.log_message("Application started successfully")
 
-        # Cleanup on window close
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.root.after(10, self._setup_taskbar_presence)
 
         self.root.mainloop()
 
-    def _set_window_icon(self):
-        """Set window icon for title bar and taskbar"""
+    def _load_logo(self):
+        """Load logo PNGs for the titlebar"""
+        self._logo_photo_small = None     # Square logo fallback (22px)
+        self._logo_photo_long_tb = None   # Wide logo for titlebar (18px tall)
+        
         try:
-            icon_path = None
-            # Try multiple locations for icon file
-            if getattr(sys, 'frozen', False):
-                # Running as EXE - check same directory as executable
-                exe_dir = os.path.dirname(sys.executable)
-                icon_path = os.path.join(exe_dir, 'icon.ico')
-            else:
-                # Running as script - check script directory
-                script_dir = os.path.dirname(os.path.abspath(__file__))
-                icon_path = os.path.join(script_dir, 'icon.ico')
+            from PIL import Image, ImageTk
             
-            # Fallback to current directory
-            if not icon_path or not os.path.exists(icon_path):
-                if os.path.exists("icon.ico"):
-                    icon_path = os.path.abspath("icon.ico")
+            search_dirs = self._get_asset_search_dirs()
             
-            if icon_path and os.path.exists(icon_path):
-                # Windows needs absolute paths
-                icon_path = os.path.abspath(icon_path)
+            # Square logo (frag-logo.png) as fallback
+            square_path = self._find_file(search_dirs, 'frag-logo.png')
+            if square_path:
+                img = Image.open(square_path).convert("RGBA")
+                small = img.resize((22, 22), Image.LANCZOS)
+                self._logo_photo_small = ImageTk.PhotoImage(small)
+            
+            # Wide logo (frag-logo-long.png) for titlebar
+            long_path = self._find_file(search_dirs, 'frag-logo-long.png')
+            if long_path:
+                img_long = Image.open(long_path).convert("RGBA")
+                aspect = img_long.width / img_long.height
+                tb_h = 18
+                tb_w = int(tb_h * aspect)
+                resized_tb = img_long.resize((tb_w, tb_h), Image.LANCZOS)
+                self._logo_photo_long_tb = ImageTk.PhotoImage(resized_tb)
                 
-                # Try iconbitmap first (title bar)
-                try:
-                    self.root.iconbitmap(icon_path)
-                except Exception as e:
-                    logging.debug(f"iconbitmap failed: {e}")
-                
-                # Also try wm_iconbitmap for taskbar (Windows)
-                if os.name == 'nt':
-                    try:
-                        self.root.wm_iconbitmap(icon_path)
-                    except Exception as e:
-                        logging.debug(f"wm_iconbitmap failed: {e}")
-                        # Last resort: direct tk call
-                        try:
-                            self.root.tk.call('wm', 'iconbitmap', self.root._w, '-default', icon_path)
-                        except Exception as e:
-                            logging.debug(f"tk call iconbitmap failed: {e}")
+        except ImportError:
+            logging.warning("Pillow not installed, no logo available")
         except Exception as e:
-            logging.debug(f"Failed to set window icon: {e}")
+            logging.warning(f"Failed to load logos: {e}")
+
+    def _get_asset_search_dirs(self):
+        """Return list of directories to search for bundled assets"""
+        dirs = []
+        if getattr(sys, 'frozen', False):
+            dirs.append(getattr(sys, '_MEIPASS', os.path.dirname(sys.executable)))
+            dirs.append(os.path.dirname(sys.executable))
+        dirs.append(os.path.dirname(os.path.abspath(__file__)))
+        dirs.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'public'))
+        return dirs
+
+    @staticmethod
+    def _find_file(search_dirs, filename):
+        """Find a file across multiple directories"""
+        for d in search_dirs:
+            path = os.path.join(d, filename)
+            if os.path.exists(path):
+                return path
+        return None
+
+    def _setup_taskbar_presence(self):
+        """Make overrideredirect window appear in taskbar on Windows with correct icon"""
+        try:
+            import ctypes
+            GWL_EXSTYLE = -20
+            WS_EX_APPWINDOW = 0x00040000
+            WS_EX_TOOLWINDOW = 0x00000080
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            style = style & ~WS_EX_TOOLWINDOW | WS_EX_APPWINDOW
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            # Re-show to apply
+            self.root.withdraw()
+            self.root.after(10, self._finish_taskbar_setup)
+        except Exception:
+            pass
+
+    def _finish_taskbar_setup(self):
+        """Finish taskbar setup: re-apply icon and show window"""
+        self.root.deiconify()
+        # Re-apply icon after style change (Windows can lose it)
+        self._create_and_set_icon()
+
+    def _create_and_set_icon(self):
+        """Set the window/taskbar icon from icon.ico"""
+        try:
+            icon_path = self._find_file(self._get_asset_search_dirs(), 'icon.ico')
+            if icon_path:
+                self.root.iconbitmap(os.path.abspath(icon_path))
+                if os.name == 'nt':
+                    self.root.wm_iconbitmap(os.path.abspath(icon_path))
+        except Exception as e:
+            logging.warning(f"Failed to load icon.ico: {e}")
+
+    def _start_drag(self, event):
+        """Start dragging the window"""
+        self._drag_start_x = event.x
+        self._drag_start_y = event.y
+
+    def _on_drag(self, event):
+        """Handle window drag movement"""
+        x = self.root.winfo_x() + event.x - self._drag_start_x
+        y = self.root.winfo_y() + event.y - self._drag_start_y
+        self.root.geometry(f"+{x}+{y}")
+
+    def _minimize_window(self):
+        """Minimize the window"""
+        self.root.withdraw()
+        try:
+            import ctypes
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+        except Exception:
+            self.root.iconify()
 
     def setup_gui(self):
-        # Main window container
-        main_frame = tk.Frame(self.root, bg=self.bg_color, padx=20, pady=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Outer border
+        outer = tk.Frame(self.root, bg=self.card_border, bd=0)
+        outer.pack(fill=tk.BOTH, expand=True)
 
-        # Window title
-        title_label = tk.Label(main_frame,
-                              text="Skinergy Uploader",
-                              font=self.title_font,
-                              fg=self.text_primary,  # Light gray text
-                              bg=self.bg_color)  # Dark background
-        title_label.pack(anchor=tk.W, pady=(0, 16))
+        inner = tk.Frame(outer, bg=self.bg_color)
+        inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
 
-        # Auth card container
-        self.auth_card = tk.Frame(main_frame, 
-                                  bg="#1F2937",  # Dark gray card background
-                                  relief="flat",
-                                  bd=1,
-                                  highlightbackground=self.border_color,  # Border color
-                                  highlightthickness=1)
-        self.auth_card.pack(fill=tk.X, pady=(0, 12))
+        # Titlebar
+        titlebar = tk.Frame(inner, bg=self.titlebar_bg, height=44)
+        titlebar.pack(fill=tk.X, side=tk.TOP)
+        titlebar.pack_propagate(False)
 
-        # Code input section
-        input_container = tk.Frame(self.auth_card, bg="#1F2937")  # Dark gray
-        input_container.pack(fill=tk.X, padx=12, pady=12)
+        # Make titlebar draggable
+        titlebar.bind("<Button-1>", self._start_drag)
+        titlebar.bind("<B1-Motion>", self._on_drag)
 
-        # Label above input
-        code_label = tk.Label(input_container,
-                             text="Authorization Code",
-                             font=self.small_font,
-                             fg=self.text_secondary,  # Medium gray text
-                             bg="#1F2937",  # Dark gray background
-                             anchor=tk.W)
-        code_label.pack(anchor=tk.W, pady=(0, 6))
+        # Logo + brand group (left side)
+        brand_frame = tk.Frame(titlebar, bg=self.titlebar_bg)
+        brand_frame.pack(side=tk.LEFT, padx=(16, 0), fill=tk.Y)
+        brand_frame.bind("<Button-1>", self._start_drag)
+        brand_frame.bind("<B1-Motion>", self._on_drag)
 
-        # Input field and buttons container
-        input_frame = tk.Frame(input_container, bg="#1F2937")  # Dark gray
-        input_frame.pack(fill=tk.X)
+        if self._logo_photo_long_tb:
+            logo_label = tk.Label(brand_frame, image=self._logo_photo_long_tb, 
+                                 bg=self.titlebar_bg, bd=0)
+            logo_label.pack(side=tk.LEFT, pady=13)
+            logo_label.bind("<Button-1>", self._start_drag)
+            logo_label.bind("<B1-Motion>", self._on_drag)
+        elif self._logo_photo_small:
+            logo_label = tk.Label(brand_frame, image=self._logo_photo_small, 
+                                 bg=self.titlebar_bg, bd=0)
+            logo_label.pack(side=tk.LEFT, pady=11)
+            logo_label.bind("<Button-1>", self._start_drag)
+            logo_label.bind("<B1-Motion>", self._on_drag)
 
-        # Code entry field
-        self.code_entry = tk.Entry(input_frame,
-                                  font=("Consolas", 12, "bold"),
-                                  width=14,
-                                  justify=tk.CENTER,
-                                  bg="#0F172A",  # Very dark blue-gray input background
-                                  fg=self.text_primary,  # Light gray text
-                                  insertbackground=self.text_primary,  # Cursor color
-                                  relief="flat",
-                                  bd=1,
+        # Window controls
+        controls_frame = tk.Frame(titlebar, bg=self.titlebar_bg)
+        controls_frame.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Minimize button
+        min_btn = tk.Label(controls_frame, text="─", font=("Bahnschrift Light", 10),
+                          fg=self.text_muted, bg=self.titlebar_bg, 
+                          width=5, cursor="hand2")
+        min_btn.pack(side=tk.LEFT, fill=tk.Y)
+        min_btn.bind("<Enter>", lambda e: min_btn.config(bg=self.hover_bg, fg=self.text_secondary))
+        min_btn.bind("<Leave>", lambda e: min_btn.config(bg=self.titlebar_bg, fg=self.text_muted))
+        min_btn.bind("<Button-1>", lambda e: self._minimize_window())
+
+        # Close button
+        close_btn = tk.Label(controls_frame, text="✕", font=("Bahnschrift Light", 10),
+                            fg=self.text_muted, bg=self.titlebar_bg,
+                            width=5, cursor="hand2")
+        close_btn.pack(side=tk.LEFT, fill=tk.Y)
+        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#DC2626", fg="white"))
+        close_btn.bind("<Leave>", lambda e: close_btn.config(bg=self.titlebar_bg, fg=self.text_muted))
+        close_btn.bind("<Button-1>", lambda e: self.on_closing())
+
+        tk.Frame(inner, bg=self.divider, height=1).pack(fill=tk.X)
+
+        # Main content
+        main_frame = tk.Frame(inner, bg=self.bg_color)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=28, pady=(20, 18))
+
+        # Hero section
+        hero_frame = tk.Frame(main_frame, bg=self.bg_color)
+        hero_frame.pack(fill=tk.X, pady=(0, 18))
+
+        hero_title = tk.Label(hero_frame, text="Skin Data Uploader",
+                             font=("Bahnschrift SemiBold", 14),
+                             fg=self.text_primary, bg=self.bg_color)
+        hero_title.pack(anchor=tk.W)
+
+        hero_subtitle = tk.Label(hero_frame, text="Sync your League collection with Skinergy",
+                                font=("Bahnschrift Light", 9),
+                                fg=self.text_secondary, bg=self.bg_color)
+        hero_subtitle.pack(anchor=tk.W, pady=(4, 0))
+
+        # Auth card
+        self.auth_card = tk.Frame(main_frame, bg=self.card_bg,
                                   highlightthickness=1,
-                                  highlightbackground=self.border_color,  # Border color
-                                  highlightcolor=self.primary_color)  # Focus border (purple)
-        self.code_entry.pack(side=tk.LEFT, padx=(0, 8))
+                                  highlightbackground=self.card_border,
+                                  highlightcolor=self.card_border)
+        self.auth_card.pack(fill=tk.X, pady=(0, 14))
 
-        # Buttons container
-        btn_frame = tk.Frame(input_frame, bg="#1F2937")  # Dark gray
-        btn_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        card_inner = tk.Frame(self.auth_card, bg=self.card_bg)
+        card_inner.pack(fill=tk.X, padx=18, pady=16)
 
-        # Paste button
-        paste_btn = tk.Button(btn_frame,
-                              text="📋",
-                              font=("Segoe UI", 12),
-                              fg=self.text_primary,  # Light gray text
-                              bg="#1F2937",  # Dark gray background
-                              activebackground="#374151",  # Lighter gray on hover
-                              activeforeground=self.text_primary,
-                              relief="flat",
-                              padx=8,
-                              pady=6,
-                              command=self.paste_code,
-                              cursor="hand2",
-                              bd=0,
-                              width=2)
-        paste_btn.pack(side=tk.LEFT, padx=(0, 6))
+        section_label = tk.Label(card_inner, text="AUTHORIZATION CODE",
+                                font=self.label_font,
+                                fg=self.text_muted, bg=self.card_bg)
+        section_label.pack(anchor=tk.W, pady=(0, 10))
+
+        input_row = tk.Frame(card_inner, bg=self.card_bg)
+        input_row.pack(fill=tk.X)
+
+        # Code entry
+        entry_frame = tk.Frame(input_row, bg=self.input_border, 
+                              highlightthickness=0)
+        entry_frame.pack(side=tk.LEFT, padx=(0, 10))
+        
+        entry_inner = tk.Frame(entry_frame, bg=self.input_bg)
+        entry_inner.pack(padx=1, pady=1)
+
+        self.code_entry = tk.Entry(entry_inner,
+                                  font=self.mono_font,
+                                  width=10,
+                                  justify=tk.CENTER,
+                                  bg=self.input_bg,
+                                  fg=self.text_primary,
+                                  insertbackground='#FFFFFF',
+                                  relief="flat",
+                                  bd=8,
+                                  highlightthickness=0)
+        self.code_entry.pack()
 
         # Clear button
-        clear_btn = tk.Button(btn_frame,
-                              text="✕",
-                              font=("Segoe UI", 14),
-                              fg=self.text_primary,  # Light gray text
-                              bg="#1F2937",  # Dark gray background
-                              activebackground="#374151",  # Lighter gray on hover
-                              activeforeground=self.text_primary,
-                              relief="flat",
-                              padx=8,
-                              pady=6,
-                              command=self.clear_code,
-                              cursor="hand2",
-                              bd=0,
-                              width=2)
+        clear_btn = tk.Label(input_row, text="✕", font=("Bahnschrift", 8),
+                            fg=self.text_muted, bg=self.card_bg,
+                            cursor="hand2", padx=2)
         clear_btn.pack(side=tk.LEFT, padx=(0, 8))
+        clear_btn.bind("<Enter>", lambda e: clear_btn.config(fg=self.text_secondary))
+        clear_btn.bind("<Leave>", lambda e: clear_btn.config(fg=self.text_muted))
+        clear_btn.bind("<Button-1>", lambda e: self.clear_code())
 
-        # Main action button (Authorize/Start Upload)
-        self.auth_btn = tk.Button(btn_frame,
-                                  text="Authorize",
-                                  font=self.body_font,
-                                  fg="white",  # White text
-                                  bg=self.primary_color,  # Purple background
-                                  activebackground="#A855F7",  # Lighter purple on hover
-                                  activeforeground="white",
-                                  relief="flat",
-                                  padx=16,
-                                  pady=6,
+        # Button group
+        btn_group = tk.Frame(input_row, bg=self.card_bg)
+        btn_group.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        paste_btn = tk.Button(btn_group, text="Paste",
+                              font=("Bahnschrift", 8),
+                              fg=self.text_secondary, bg=self.surface,
+                              activebackground=self.hover_bg,
+                              activeforeground=self.text_primary,
+                              relief="flat", padx=12, pady=7,
+                              command=self.paste_code, cursor="hand2",
+                              bd=0, highlightthickness=1,
+                              highlightbackground=self.card_border,
+                              highlightcolor=self.card_border)
+        paste_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        self.auth_btn = tk.Button(btn_group, text="Authorize",
+                                  font=("Bahnschrift SemiBold", 9),
+                                  fg=self.btn_primary_text,
+                                  bg=self.btn_primary,
+                                  activebackground=self.btn_primary_hover,
+                                  activeforeground=self.btn_primary_text,
+                                  relief="flat", padx=20, pady=7,
                                   command=self.handle_auth_or_upload,
-                                  cursor="hand2",
-                                  bd=0)
+                                  cursor="hand2", bd=0, highlightthickness=0)
         self.auth_btn.pack(side=tk.LEFT)
 
-        # Progress timeline container
-        self.progress_container = tk.Frame(main_frame, bg=self.bg_color)  # Dark background
-        self.progress_container.pack(fill=tk.X, pady=(0, 8))
+        tk.Frame(card_inner, bg=self.divider, height=1).pack(fill=tk.X, pady=(12, 10))
 
-        # Progress steps definition
+        # League client status indicator
+        status_row = tk.Frame(card_inner, bg=self.card_bg)
+        status_row.pack(fill=tk.X)
+
+        status_dot_frame = tk.Frame(status_row, bg=self.card_bg)
+        status_dot_frame.pack(side=tk.LEFT)
+
+        self.status_dot = tk.Canvas(status_dot_frame, width=8, height=8, 
+                                    bg=self.card_bg, highlightthickness=0)
+        self.status_dot.pack(side=tk.LEFT, pady=2)
+        self.status_dot.create_oval(1, 1, 7, 7, fill=self.text_muted, outline="")
+
+        self.client_status = tk.Label(status_row,
+                                      text="  League Client: Checking...",
+                                      font=("Bahnschrift Light", 8),
+                                      fg=self.text_muted, bg=self.card_bg,
+                                      anchor=tk.W)
+        self.client_status.pack(side=tk.LEFT)
+
+        # Progress stepper
+        self.progress_container = tk.Frame(main_frame, bg=self.bg_color)
+        self.progress_container.pack(fill=tk.X, pady=(0, 14))
+
+        progress_header = tk.Label(self.progress_container, text="PROGRESS",
+                                  font=self.label_font,
+                                  fg=self.text_muted, bg=self.bg_color)
+        progress_header.pack(anchor=tk.W, pady=(0, 12))
+
+        # Progress steps
         self.steps = [
-            {"label": "Authorize"},
-            {"label": "Fetch Data"},
-            {"label": "Upload"},
-            {"label": "Complete"}
+            {"label": "Authorize", "num": "1"},
+            {"label": "Fetch", "num": "2"},
+            {"label": "Upload", "num": "3"},
+            {"label": "Done", "num": "4"}
         ]
         self.step_labels = []
-        self.step_indicators = []
+        self.step_numbers = []
         self.step_connectors = []
-        
-        # Build horizontal progress timeline
-        timeline_frame = tk.Frame(self.progress_container, bg=self.bg_color)  # Dark background
-        timeline_frame.pack(fill=tk.X, pady=8)
-        
+
+        timeline_frame = tk.Frame(self.progress_container, bg=self.bg_color)
+        timeline_frame.pack(fill=tk.X)
+
         for i, step in enumerate(self.steps):
-            # Each step container
-            step_container = tk.Frame(timeline_frame, bg=self.bg_color)  # Dark background
-            step_container.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
-            
-            # Step indicator (circle)
-            indicator = tk.Label(step_container,
-                                text="○",
-                                font=("Segoe UI", 12),
-                                fg=self.text_secondary,  # Medium gray (pending state)
-                                bg=self.bg_color,  # Dark background
-                                width=3)
-            indicator.pack()
-            self.step_indicators.append(indicator)
-            
-            # Step label text
-            step_label = tk.Label(step_container,
-                                 text=step["label"],
-                                 font=self.small_font,
-                                 fg=self.text_secondary,  # Medium gray text
-                                 bg=self.bg_color)  # Dark background
-            step_label.pack(pady=(4, 0))
-            self.step_labels.append(step_label)
-            
-            # Connector line between steps
-            if i < len(self.steps) - 1:
-                connector = tk.Frame(timeline_frame, 
-                                     bg=self.border_color,  # Dark gray line
-                                     height=2,
-                                     width=20)
-                connector.pack(side=tk.LEFT, padx=4, pady=12)
+            # Connector line BEFORE each step (except the first)
+            if i > 0:
+                connector = tk.Frame(timeline_frame, bg=self.card_border, height=2)
+                connector.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=(0, 16))
                 self.step_connectors.append(connector)
 
-        # Status message display
-        self.status_label = tk.Label(main_frame,
-                                    text="",
-                                    font=self.small_font,
-                                    fg=self.text_secondary,  # Medium gray text
-                                    bg=self.bg_color,  # Dark background
-                                    anchor=tk.W,
-                                    wraplength=460)
-        self.status_label.pack(fill=tk.X, pady=(8, 0))
+            step_container = tk.Frame(timeline_frame, bg=self.bg_color)
+            step_container.pack(side=tk.LEFT)
 
-        # League client connection status
-        self.client_status = tk.Label(main_frame,
-                                      text="League client: Checking...",
-                                      font=self.small_font,
-                                      fg=self.text_secondary,  # Medium gray text
-                                      bg=self.bg_color,  # Dark background
-                                      anchor=tk.W)
-        self.client_status.pack(fill=tk.X, pady=(4, 0))
+            # Number badge (text-based, crisp at any size)
+            num_label = tk.Label(step_container, text=step["num"],
+                                font=("Bahnschrift SemiBold", 9),
+                                fg=self.text_muted, bg=self.card_border,
+                                width=3, height=1,
+                                relief="flat", bd=0)
+            num_label.pack()
+            self.step_numbers.append(num_label)
 
-        # Logs button (bottom-right corner)
-        logs_btn = tk.Button(main_frame,
-                            text="Logs",
-                            font=self.small_font,
-                            fg=self.text_secondary,  # Medium gray text
-                            bg=self.bg_color,  # Dark background
-                            activebackground=self.bg_color,
-                            activeforeground=self.text_primary,  # Light gray on hover
-                            relief="flat",
-                            padx=4,
-                            pady=0,
-                            command=self.open_logs,
-                            cursor="hand2",
-                            bd=0)
-        logs_btn.place(relx=1.0, rely=1.0, anchor=tk.SE, x=-4, y=-4)
+            # Step label below
+            step_label = tk.Label(step_container, text=step["label"],
+                                 font=("Bahnschrift Light", 7),
+                                 fg=self.text_muted, bg=self.bg_color)
+            step_label.pack(pady=(4, 0))
+            self.step_labels.append(step_label)
 
-        # Log window state
+        # Status message
+        self.status_label = tk.Label(main_frame, text="",
+                                    font=("Bahnschrift", 9),
+                                    fg=self.emerald, bg=self.bg_color,
+                                    anchor=tk.W, wraplength=400)
+        self.status_label.pack(fill=tk.X, pady=(6, 0))
+
+        # Bottom bar
+        bottom_bar = tk.Frame(main_frame, bg=self.bg_color)
+        bottom_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(6, 0))
+
+        logs_btn = tk.Label(bottom_bar, text="View Logs",
+                           font=("Bahnschrift Light", 8),
+                           fg=self.text_muted, bg=self.bg_color,
+                           cursor="hand2")
+        logs_btn.pack(side=tk.RIGHT)
+        logs_btn.bind("<Enter>", lambda e: logs_btn.config(fg=self.text_secondary))
+        logs_btn.bind("<Leave>", lambda e: logs_btn.config(fg=self.text_muted))
+        logs_btn.bind("<Button-1>", lambda e: self.open_logs())
+
+        version_label = tk.Label(bottom_bar, text="v2.0",
+                                font=("Bahnschrift Light", 7),
+                                fg=self.text_muted, bg=self.bg_color)
+        version_label.pack(side=tk.LEFT)
+
         self.log_lines = []
         self.log_window = None
         self.log_text = None
 
-        # Input field event handlers
+        # Input handlers
         self.code_entry.bind('<KeyRelease>', self.on_code_change)
         self.code_entry.bind('<Return>', lambda event: self.authorize_device())
         self.code_entry.focus_set()
-        
+
         # Initialize progress display
         self.update_step(0)
 
@@ -532,7 +674,7 @@ class LeagueSkinFetcher:
             try:
                 new_pos = min(pos, len(cleaned))
                 self.code_entry.icursor(new_pos)
-            except:
+            except Exception:
                 pass
         
         # Auto-submit once we have 8 chars
@@ -547,10 +689,9 @@ class LeagueSkinFetcher:
             self.code_entry.delete(0, tk.END)
             self.code_entry.insert(0, cleaned)
             self.code_entry.focus_set()
-            # Auto-submit if 8 chars
             if len(cleaned) == 8:
                 self.root.after(100, self.authorize_device)
-        except:
+        except Exception:
             pass
 
     def clear_code(self):
@@ -561,15 +702,12 @@ class LeagueSkinFetcher:
     def handle_auth_or_upload(self):
         """Authorize if needed, otherwise start upload"""
         if not self.authorized:
-            # Need to authorize first
             self.authorize_device()
-        else:
-            # Already authorized, start upload
-            if not self.is_fetching:
-                self.fetch_skins_threaded()
+        elif not self.is_fetching:
+            self.fetch_skins_threaded()
 
     def load_persistent_auth(self):
-        """Load saved auth token if we have one"""
+        """Load saved auth token if available"""
         auth_token, user_id = _load_auth_token()
         if auth_token and user_id:
             try:
@@ -577,9 +715,10 @@ class LeagueSkinFetcher:
                 self.user_id = user_id
                 self.authorized = True
                 
-                self.status_label.config(text="Authorization found. Click 'Authorize' to verify or enter a new code.", fg=self.text_secondary)  # Medium gray text
+                self.status_label.config(text="Ready to upload! Click 'Start Upload' to sync your skins.", fg=self.emerald)
+                self.auth_btn.config(text="Start Upload", bg=self.emerald, fg="white",
+                                    activebackground=self.emerald_dim, activeforeground="white")
                 self.update_step(0)
-                
                 self.log_message("Loaded persistent authorization")
             except Exception as e:
                 self.log_message(f"Persistent auth invalid: {e}")
@@ -587,9 +726,13 @@ class LeagueSkinFetcher:
                 self.auth_token = None
                 self.user_id = None
                 self.authorized = False
+        else:
+            self.authorized = False
+            self.auth_token = None
+            self.user_id = None
 
     def log_message(self, message):
-        """Add message to log buffer (sanitized)"""
+        """Add a sanitized message to the log buffer"""
         sanitized_message = SecurityConfig.sanitize_log_message(message)
         timestamp = time.strftime("%H:%M:%S")
         entry = f"[{timestamp}] {sanitized_message}"
@@ -627,62 +770,115 @@ class LeagueSkinFetcher:
             return
 
         self.log_window = tk.Toplevel(self.root)
-        self.log_window.title("Logs")
-        self.log_window.geometry("600x400")
+        self.log_window.title("Application Logs")
+        self.log_window.geometry("640x480")
         self.log_window.configure(bg=self.bg_color)
-
-        # Controls frame
-        ctrl_frame = tk.Frame(self.log_window, bg=self.bg_color)
-        ctrl_frame.pack(fill=tk.X, padx=10, pady=10)
-
-        copy_btn = tk.Button(ctrl_frame,
-                            text="Copy",
-                            font=self.body_font,
-                            fg=self.text_primary,
-                            bg="#1F2937",
-                            activebackground="#374151",
-                            relief="flat",
-                            padx=8,
-                            pady=2,
-                            command=self._copy_logs,
-                            cursor="hand2")
-        copy_btn.pack(side=tk.LEFT, padx=(0, 6))
-
-        clear_btn = tk.Button(ctrl_frame,
-                            text="Clear",
-                            font=self.body_font,
-                            fg=self.text_primary,
-                            bg="#1F2937",
-                            activebackground="#374151",
-                            relief="flat",
-                            padx=8,
-                            pady=2,
-                            command=self._clear_logs,
-                            cursor="hand2")
-        clear_btn.pack(side=tk.LEFT)
-
-        close_btn = tk.Button(ctrl_frame,
-                            text="Close",
-                            font=self.body_font,
-                            fg=self.text_primary,
-                            bg="#1F2937",
-                            activebackground="#374151",
-                            relief="flat",
-                            padx=8,
-                            pady=2,
-                            command=self.log_window.destroy,
-                            cursor="hand2")
-        close_btn.pack(side=tk.RIGHT)
-
-        # Log text display area
-        self.log_text = tk.Text(self.log_window,
-                               bg="#1F2937",  # Dark gray background
-                               fg=self.text_primary,  # Light gray text
-                               font=("Consolas", 8),
+        self.log_window.overrideredirect(True)
+        
+        # Outer border frame
+        self.log_window.config(highlightthickness=1, highlightbackground=self.card_border, highlightcolor=self.card_border)
+        
+        # Custom titlebar - matches main app
+        titlebar = tk.Frame(self.log_window, bg=self.titlebar_bg, height=44)
+        titlebar.pack(fill=tk.X, side=tk.TOP)
+        titlebar.pack_propagate(False)
+        
+        # Titlebar drag bindings
+        titlebar.bind("<Button-1>", lambda e: self._start_log_drag(e))
+        titlebar.bind("<B1-Motion>", lambda e: self._on_log_drag(e))
+        
+        # Logo in titlebar (left side) - matches main app
+        brand_frame = tk.Frame(titlebar, bg=self.titlebar_bg)
+        brand_frame.pack(side=tk.LEFT, padx=(16, 0), fill=tk.Y)
+        brand_frame.bind("<Button-1>", lambda e: self._start_log_drag(e))
+        brand_frame.bind("<B1-Motion>", lambda e: self._on_log_drag(e))
+        
+        if self._logo_photo_long_tb:
+            logo_label = tk.Label(brand_frame, image=self._logo_photo_long_tb, 
+                                 bg=self.titlebar_bg, bd=0)
+            logo_label.pack(side=tk.LEFT, pady=13)
+            logo_label.bind("<Button-1>", lambda e: self._start_log_drag(e))
+            logo_label.bind("<B1-Motion>", lambda e: self._on_log_drag(e))
+        elif self._logo_photo_small:
+            logo_label = tk.Label(brand_frame, image=self._logo_photo_small, 
+                                 bg=self.titlebar_bg, bd=0)
+            logo_label.pack(side=tk.LEFT, pady=11)
+            logo_label.bind("<Button-1>", lambda e: self._start_log_drag(e))
+            logo_label.bind("<B1-Motion>", lambda e: self._on_log_drag(e))
+        
+        # Close button (X) in titlebar - matches main app style
+        close_x = tk.Label(titlebar,
+                          text="✕",
+                          font=("Bahnschrift Light", 10),
+                          fg=self.text_muted,
+                          bg=self.titlebar_bg,
+                          width=5,
+                          cursor="hand2")
+        close_x.pack(side=tk.RIGHT, fill=tk.Y)
+        close_x.bind("<Button-1>", lambda e: self.log_window.destroy())
+        close_x.bind("<Enter>", lambda e: close_x.config(bg="#DC2626", fg="white"))
+        close_x.bind("<Leave>", lambda e: close_x.config(bg=self.titlebar_bg, fg=self.text_muted))
+        
+        # Divider under titlebar
+        tk.Frame(self.log_window, bg=self.divider, height=1).pack(fill=tk.X)
+        
+        # Main content area
+        content_frame = tk.Frame(self.log_window, bg=self.bg_color)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
+        
+        # "Application Logs" title below titlebar
+        title_label = tk.Label(content_frame,
+                              text="Application Logs",
+                              font=("Bahnschrift SemiBold", 13),
+                              fg=self.text_primary,
+                              bg=self.bg_color)
+        title_label.pack(anchor=tk.W, pady=(0, 12))
+        
+        # Log text area with scrollbar
+        text_container = tk.Frame(content_frame, bg=self.card_bg,
+                                  highlightthickness=1,
+                                  highlightbackground=self.card_border,
+                                  highlightcolor=self.card_border)
+        text_container.pack(fill=tk.BOTH, expand=True)
+        
+        # Scrollbar
+        scrollbar = tk.Scrollbar(text_container, bg=self.surface, troughcolor=self.card_bg,
+                                 activebackground=self.hover_bg, highlightthickness=0, bd=0)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.log_text = tk.Text(text_container,
+                               bg=self.card_bg,
+                               fg=self.text_secondary,
+                               font=("Consolas", 9),
                                relief="flat",
                                bd=0,
-                               wrap=tk.WORD)
-        self.log_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+                               wrap=tk.WORD,
+                               padx=12,
+                               pady=12,
+                               highlightthickness=0,
+                               yscrollcommand=scrollbar.set)
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.log_text.yview)
+
+        # Copy All button at bottom
+        bottom_frame = tk.Frame(content_frame, bg=self.bg_color)
+        bottom_frame.pack(fill=tk.X, pady=(16, 0))
+        
+        copy_btn = tk.Button(bottom_frame,
+                            text="Copy All",
+                            font=("Bahnschrift SemiBold", 9),
+                            fg=self.btn_primary_text,
+                            bg=self.btn_primary,
+                            activebackground=self.btn_primary_hover,
+                            activeforeground=self.btn_primary_text,
+                            relief="flat",
+                            padx=16,
+                            pady=8,
+                            command=self._copy_logs,
+                            cursor="hand2",
+                            bd=0,
+                            highlightthickness=0)
+        copy_btn.pack(fill=tk.X)
 
         # Populate existing logs
         for line in getattr(self, 'log_lines', []):
@@ -706,36 +902,38 @@ class LeagueSkinFetcher:
         except Exception:
             pass
 
-    def _clear_logs(self):
-        """Clear log buffer"""
-        self.log_lines = []
-        if getattr(self, 'log_text', None):
-            try:
-                self.log_text.config(state=tk.NORMAL)
-                self.log_text.delete('1.0', tk.END)
-                self.log_text.config(state=tk.DISABLED)
-            except Exception:
-                pass
+    def _start_log_drag(self, event):
+        """Start dragging the log window"""
+        self._log_drag_start_x = event.x
+        self._log_drag_start_y = event.y
+
+    def _on_log_drag(self, event):
+        """Handle dragging the log window"""
+        try:
+            x = self.log_window.winfo_x() + event.x - self._log_drag_start_x
+            y = self.log_window.winfo_y() + event.y - self._log_drag_start_y
+            self.log_window.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
 
     def authorize_device(self):
         """Validate and submit auth code"""
         code = self.code_entry.get().strip().replace(' ', '').upper()
         
-        # Validate code format
         is_valid, validated_code = SecurityConfig.validate_auth_code(code)
         if not is_valid:
-            self.status_label.config(text=validated_code, fg="#EF4444")  # Red text for error
+            self.status_label.config(text=validated_code, fg=self.error_color)
             return
         
         # Check rate limiting
         if not self.rate_limiter.can_make_request():
             wait_time = self.rate_limiter.time_until_next_request()
-            self.status_label.config(text=f"Rate limited. Wait {wait_time}s", fg="#F59E0B")  # Amber text for warning
+            self.status_label.config(text=f"Rate limited. Wait {wait_time}s", fg=self.warning_color)
             self.log_message(f"Rate limited: Please wait {wait_time} seconds")
             return
         
         self.log_message(f"Attempting authorization with code: [REDACTED]")
-        self.status_label.config(text="Verifying code...", fg=self.text_secondary)  # Medium gray text
+        self.status_label.config(text="Verifying code...", fg=self.text_secondary)
         
         try:
             response = requests.post(
@@ -752,65 +950,65 @@ class LeagueSkinFetcher:
                 data = response.json()
                 self.auth_token = data.get('auth_token')
                 self.user_id = data.get('user_id')
+                expires_in = data.get('expires_in', 86400)
                 
                 if self.auth_token and self.user_id:
                     self.authorized = True
+                    _save_auth_token(self.auth_token, self.user_id, expires_in)
                     
-                    # Save persistent auth
-                    _save_auth_token(self.auth_token, self.user_id)
-                    
-                    # Show progress, keep auth UI visible
                     self.progress_container.pack(fill=tk.X, pady=(0, 8), before=self.status_label)
-                    self.update_step(0)  # Step 0: Authorize (completed)
+                    self.update_step(0)
                     
-                    self.status_label.config(text="Authorization successful! Click 'Authorize' again to start upload.", fg=self.success_color)  # Green text
+                    self.status_label.config(text="Authorization successful! Click 'Start Upload' to sync your skins.", fg=self.emerald)
                     self.log_message("Device authorization successful!")
-                    
-                    # Update button to show ready state
-                    self.auth_btn.config(text="Start Upload", bg=self.success_color, activebackground="#059669")  # Green button
+                    self.auth_btn.config(text="Start Upload", bg=self.emerald, fg="white",
+                                        activebackground=self.emerald_dim, activeforeground="white")
                 else:
-                    self.status_label.config(text="Authorization failed - missing token", fg="#EF4444")  # Red text
+                    self.status_label.config(text="Authorization failed - missing token", fg=self.error_color)
                     self.log_message("Authorization failed: No auth token or user_id received")
                     
             elif response.status_code == 404:
-                self.status_label.config(text="Invalid or expired code", fg="#EF4444")  # Red text
+                self.status_label.config(text="Invalid or expired code", fg=self.error_color)
                 self.log_message("Authorization failed: Invalid or expired code")
                 _clear_auth_token()
                 self.authorized = False
                 self.auth_token = None
                 self.user_id = None
-                self.auth_btn.config(text="Authorize", bg=self.primary_color, activebackground="#A855F7")  # Purple button
+                self.auth_btn.config(text="Authorize", bg=self.btn_primary, fg=self.btn_primary_text,
+                                    activebackground=self.btn_primary_hover, activeforeground=self.btn_primary_text)
             elif response.status_code == 409:
-                self.status_label.config(text="Code already used", fg="#EF4444")  # Red text
+                self.status_label.config(text="Code already used", fg=self.error_color)
                 self.log_message("Authorization failed: Code already used")
                 _clear_auth_token()
                 self.authorized = False
                 self.auth_token = None
                 self.user_id = None
-                self.auth_btn.config(text="Authorize", bg=self.primary_color, activebackground="#A855F7")  # Purple button
+                self.auth_btn.config(text="Authorize", bg=self.btn_primary, fg=self.btn_primary_text,
+                                    activebackground=self.btn_primary_hover, activeforeground=self.btn_primary_text)
             elif response.status_code == 400:
-                self.status_label.config(text="Invalid code format", fg="#EF4444")  # Red text
+                self.status_label.config(text="Invalid code format", fg=self.error_color)
                 self.log_message("Authorization failed: Invalid code format")
             elif response.status_code == 401:
-                self.status_label.config(text="Authorization expired. Please enter a new code.", fg="#EF4444")  # Red text
+                self.status_label.config(text="Authorization expired. Please enter a new code.", fg=self.error_color)
                 self.log_message("Authorization failed: Token expired")
                 _clear_auth_token()
                 self.authorized = False
                 self.auth_token = None
                 self.user_id = None
-                self.auth_btn.config(text="Authorize", bg=self.primary_color, activebackground="#A855F7")  # Purple button
+                self.auth_btn.config(text="Authorize", bg=self.btn_primary, fg=self.btn_primary_text,
+                                    activebackground=self.btn_primary_hover, activeforeground=self.btn_primary_text)
             else:
-                self.status_label.config(text="Authorization failed", fg="#EF4444")  # Red text
+                self.status_label.config(text="Authorization failed", fg=self.error_color)
                 self.log_message(f"Authorization failed: HTTP {response.status_code}")
                 
         except requests.exceptions.ConnectionError:
-            self.status_label.config(text="Server connection error", fg="#EF4444")  # Red text
+            self.status_label.config(text="Server connection error", fg=self.error_color)
             self.log_message("Connection error: Cannot reach Skinergy server")
         except requests.exceptions.Timeout:
-            self.status_label.config(text="Request timeout", fg="#EF4444")  # Red text
+            self.status_label.config(text="Request timeout", fg=self.error_color)
             self.log_message("Timeout error: Server took too long to respond")
         except Exception as e:
-            self.status_label.config(text="Authorization error", fg="#EF4444")  # Red text
+            self.status_label.config(text="Authorization error", fg=self.error_color)
             self.log_message(f"Authorization error: {str(e)}")
 
     def start_status_monitoring(self):
@@ -821,12 +1019,35 @@ class LeagueSkinFetcher:
                     is_running = self.is_league_running()
                     if is_running != self.last_status:
                         self.last_status = is_running
-                        self.root.after(0, self.update_status_display, is_running)
-                except:
+                        summoner_name = None
+                        if is_running:
+                            summoner_name = self._get_summoner_name_quick()
+                        self.root.after(0, self.update_status_display, is_running, summoner_name)
+                except Exception:
                     pass
                 time.sleep(2)
 
         threading.Thread(target=monitor, daemon=True).start()
+
+    def _get_summoner_name_quick(self):
+        """Try to get the logged-in summoner name from the League client API."""
+        try:
+            port, token = self.get_league_connection_info()
+            if not port or not token:
+                return None
+            url = f"https://127.0.0.1:{port}/lol-summoner/v1/current-summoner"
+            resp = requests.get(url, auth=HTTPBasicAuth('riot', token),
+                                verify=False, timeout=3)
+            if resp.status_code == 200:
+                data = resp.json()
+                name = data.get('gameName') or data.get('displayName') or ''
+                tag = data.get('tagLine', '')
+                if name and tag:
+                    return f"{name}#{tag}"
+                return name or None
+        except Exception:
+            pass
+        return None
 
     def is_league_running(self):
         """Check if League client is currently running"""
@@ -837,17 +1058,26 @@ class LeagueSkinFetcher:
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             return 'LeagueClientUx.exe' in result.stdout
-        except:
+        except Exception:
             return False
 
-    def update_status_display(self, is_running):
+    def update_status_display(self, is_running, summoner_name=None):
         """Update the League client status label"""
         try:
+            self.status_dot.delete("all")
             if is_running:
-                self.client_status.config(text="League client: Connected", fg="#10B981")  # Green text
+                self.status_dot.create_oval(1, 1, 7, 7, fill=self.emerald, outline="")
+                if summoner_name:
+                    self.client_status.config(
+                        text=f"  League Client: Connected - {summoner_name}",
+                        fg=self.emerald)
+                else:
+                    self.client_status.config(
+                        text="  League Client: Connected", fg=self.emerald)
             else:
-                self.client_status.config(text="League client: Not detected", fg="#EF4444")  # Red text
-        except:
+                self.status_dot.create_oval(1, 1, 7, 7, fill=self.error_color, outline="")
+                self.client_status.config(text="  League Client: Not detected", fg=self.error_color)
+        except Exception:
             pass
 
     def get_league_connection_info(self):
@@ -931,7 +1161,7 @@ class LeagueSkinFetcher:
                         lockfile_path = os.path.join(league_dir, 'lockfile')
                         possible_paths.insert(0, lockfile_path)
                         break
-        except:
+        except Exception:
             pass
 
         for path in possible_paths:
@@ -942,7 +1172,7 @@ class LeagueSkinFetcher:
                         parts = content.split(':')
                         if len(parts) >= 4:
                             return parts[2], parts[3]
-            except:
+            except Exception:
                 continue
 
         return None, None
@@ -958,66 +1188,82 @@ class LeagueSkinFetcher:
         self.root.update_idletasks()
     
     def update_step(self, step_index):
-        """Update which step we're on in the progress timeline"""
+        """Update which step we're on in the progress stepper"""
         self.current_step = step_index
         
-        for i, (indicator, label) in enumerate(zip(self.step_indicators, self.step_labels)):
+        for i, (num_label, label) in enumerate(zip(self.step_numbers, self.step_labels)):
             if i < step_index:
-                # Completed step
-                indicator.config(text="✓", fg=self.success_color)  # Green checkmark
-                label.config(fg=self.text_primary)  # Light gray text
+                # Completed step - emerald badge with checkmark
+                num_label.config(text="✓", bg=self.emerald_dim, fg="white",
+                                font=("Bahnschrift SemiBold", 9))
+                label.config(fg=self.text_primary)
                 if i < len(self.step_connectors):
-                    self.step_connectors[i].config(bg=self.success_color)  # Green connector line
+                    self.step_connectors[i].config(bg=self.emerald_dim)
             elif i == step_index:
-                # Current step
-                indicator.config(text="●", fg=self.primary_color)  # Purple dot
-                label.config(fg=self.text_primary)  # Light gray text
+                # Current step - purple badge
+                num_label.config(text=self.steps[i]["num"], bg=self.purple, fg="white",
+                                font=("Bahnschrift SemiBold", 9))
+                label.config(fg=self.purple)
             else:
-                # Pending step
-                indicator.config(text="○", fg=self.text_secondary)  # Medium gray circle
-                label.config(fg=self.text_secondary)  # Medium gray text
-                if i < len(self.step_connectors):
-                    self.step_connectors[i].config(bg=self.border_color)  # Dark gray connector line
+                # Pending step - dim badge
+                num_label.config(text=self.steps[i]["num"], bg=self.card_border, fg=self.text_muted,
+                                font=("Bahnschrift SemiBold", 9))
+                label.config(fg=self.text_muted)
+                if i > 0 and (i - 1) < len(self.step_connectors):
+                    self.step_connectors[i - 1].config(bg=self.card_border)
 
     def show_success_popup(self):
         """Show popup when upload completes"""
         popup = tk.Toplevel(self.root)
-        popup.title("Upload Complete")
-        popup.geometry("300x120")
-        popup.configure(bg=self.bg_color)
+        popup.overrideredirect(True)
+        popup.configure(bg=self.card_border)
         popup.resizable(False, False)
         
         # Center on parent
         popup.transient(self.root)
         popup.grab_set()
         
-        # Make it modal
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 60
-        popup.geometry(f"300x120+{x}+{y}")
+        pw, ph = 320, 180
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (pw // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (ph // 2)
+        popup.geometry(f"{pw}x{ph}+{x}+{y}")
+        
+        # Inner frame with card background
+        frame = tk.Frame(popup, bg=self.card_bg)
+        frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+        
+        content = tk.Frame(frame, bg=self.card_bg)
+        content.pack(fill=tk.BOTH, expand=True, padx=24, pady=24)
+        
+        # Success icon
+        icon_label = tk.Label(content, text="✓", 
+                             font=("Bahnschrift", 20, "bold"),
+                             fg=self.emerald, bg=self.card_bg)
+        icon_label.pack(pady=(0, 8))
         
         # Success message
-        msg_label = tk.Label(popup,
-                            text="Upload complete!",
-                            font=self.title_font,
-                            fg="#10B981",  # Green text
-                            bg=self.bg_color)  # Dark background
-        msg_label.pack(pady=(20, 10))
+        msg_label = tk.Label(content, text="Upload Complete",
+                            font=("Bahnschrift SemiBold", 12),
+                            fg=self.text_primary, bg=self.card_bg)
+        msg_label.pack(pady=(0, 4))
+        
+        # Description
+        desc_label = tk.Label(content,
+                             text="Your skin data has been synced.",
+                             font=("Bahnschrift", 9),
+                             fg=self.text_secondary, bg=self.card_bg)
+        desc_label.pack(pady=(0, 16))
         
         # Close button
-        close_btn = tk.Button(popup,
-                              text="Close",
-                              font=self.body_font,
-                              fg="white",  # White text
-                              bg=self.primary_color,  # Purple background
-                              activebackground="#A855F7",  # Lighter purple on hover
-                              activeforeground="white",
-                              relief="flat",
-                              padx=20,
-                              pady=4,
+        close_btn = tk.Button(content, text="Done",
+                              font=("Bahnschrift SemiBold", 9),
+                              fg=self.btn_primary_text, bg=self.btn_primary,
+                              activebackground=self.btn_primary_hover,
+                              activeforeground=self.btn_primary_text,
+                              relief="flat", padx=28, pady=6,
                               command=popup.destroy,
-                              cursor="hand2")
-        close_btn.pack(pady=10)
+                              cursor="hand2", bd=0, highlightthickness=0)
+        close_btn.pack()
 
     def fetch_skins_threaded(self):
         """Start skin fetch in background thread"""
@@ -1280,6 +1526,33 @@ class LeagueSkinFetcher:
                             self.log_message("✓ Data uploaded successfully!")
                             success = True
                             break
+                        elif api_response.status_code == 401:
+                            # Authorization token is invalid/expired - need to re-authorize
+                            error_msg = "Authorization expired"
+                            try:
+                                error_data = api_response.json()
+                                error_msg = error_data.get('error', error_msg)
+                            except Exception:
+                                pass
+                            
+                            self.log_message(f"⚠ {error_msg} - please re-authorize")
+                            
+                            # Clear saved auth and reset state
+                            _clear_auth_token()
+                            self.authorized = False
+                            self.auth_token = None
+                            self.user_id = None
+                            
+                            # Update UI on main thread
+                            def prompt_reauth():
+                                self.status_label.config(text="Authorization expired. Please enter a new code.", fg=self.error_color)
+                                self.auth_btn.config(text="Authorize", bg=self.btn_primary, fg=self.btn_primary_text,
+                                                    activebackground=self.btn_primary_hover, activeforeground=self.btn_primary_text)
+                                self.update_step(0)
+                                messagebox.showwarning("Re-authorization Required",
+                                    "Your authorization has expired.\n\nPlease get a new code from the Skinergy website and try again.")
+                            self.root.after(0, prompt_reauth)
+                            return  # Exit the upload flow entirely
                         elif api_response.status_code >= 500:
                             if attempt < max_attempts:
                                 wait = backoff_base ** attempt
@@ -1318,7 +1591,7 @@ class LeagueSkinFetcher:
                         try:
                             error_data = api_response.json()
                             error_msg = error_data.get('error', error_msg)
-                        except:
+                        except Exception:
                             pass
                     self.root.after(0, lambda: messagebox.showerror("Upload Error",
                                        f"Failed to upload data.\n\n{error_msg}"))

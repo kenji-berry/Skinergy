@@ -18,6 +18,15 @@ def build_exe():
                 print(f"Can't delete {folder} - close the exe if its running")
                 sys.exit(1)
     
+    # Remove stale .spec files so PyInstaller doesn't reuse old config
+    for spec in ['get_skins_gui.spec', 'SkinergyDesktop.spec', 'SkinergyUploader.spec']:
+        if os.path.exists(spec):
+            os.remove(spec)
+    
+    if not os.path.exists('icon.ico'):
+        print('icon.ico not found! Place it in the project root.')
+        sys.exit(1)
+    
     # Build command
     cmd = [
         sys.executable, '-m', 'PyInstaller',
@@ -26,19 +35,19 @@ def build_exe():
         '--noconfirm',
         '--clean',
         '--add-data', 'security_config.py;.',
+        '--add-data', 'public/frag-logo.png;.',
+        '--add-data', 'public/frag-logo-long.png;.',
+        '--add-data', 'icon.ico;.',
         '--hidden-import', 'tkinter',
         '--hidden-import', 'requests',
         '--hidden-import', 'urllib3',
-        '--exclude-module', 'PIL',
-        '--exclude-module', 'matplotlib',
-        '--name=SkinergyDesktop',
+        '--hidden-import', 'PIL',
+        '--hidden-import', 'PIL._tkinter_finder',
+        '--icon=icon.ico',
+        '--name=SkinergyUploader',
         '--distpath=dist',
         'get_skins_gui.py'
     ]
-    
-    # Add icon if we have one
-    if os.path.exists('icon.ico'):
-        cmd.insert(-1, '--icon=icon.ico')
     
     print("Building Skinergy Desktop...")
     
@@ -46,7 +55,7 @@ def build_exe():
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         
         if result.returncode == 0:
-            exe_path = os.path.join('dist', 'SkinergyDesktop.exe')
+            exe_path = os.path.join('dist', 'SkinergyUploader.exe')
             if os.path.exists(exe_path):
                 size_mb = os.path.getsize(exe_path) / (1024 * 1024)
                 print(f"Done! {exe_path} ({size_mb:.1f} MB)")
