@@ -2,7 +2,7 @@ import requests
 import urllib3
 import json
 import tkinter as tk
-from tkinter import messagebox
+# messagebox removed — custom _show_popup used instead to avoid freeze with overrideredirect windows
 import subprocess
 import re
 import threading
@@ -238,6 +238,7 @@ class LeagueSkinFetcher:
 
         # App state
         self.is_fetching = False
+        self.is_authorizing = False
         self.auth_token = None
         self.user_id = None
         self.authorized = False
@@ -246,6 +247,10 @@ class LeagueSkinFetcher:
         self.last_status = None
         self._drag_start_x = 0
         self._drag_start_y = 0
+        self._spinner_running = False
+        self._spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self._spinner_index = 0
+        self._spinner_base_text = ""
 
         self.api_endpoints = SecurityConfig.get_api_endpoints()
         self.rate_limiter = RateLimiter(SecurityConfig.MAX_REQUESTS_PER_MINUTE)
@@ -543,12 +548,13 @@ class LeagueSkinFetcher:
                               highlightcolor=self.card_border)
         paste_btn.pack(side=tk.LEFT, padx=(0, 8))
 
-        self.auth_btn = tk.Button(btn_group, text="Authorize",
+        self.auth_btn = tk.Button(btn_group, text="Start Upload",
                                   font=("Bahnschrift SemiBold", 9),
                                   fg=self.btn_primary_text,
                                   bg=self.btn_primary,
                                   activebackground=self.btn_primary_hover,
                                   activeforeground=self.btn_primary_text,
+                                  disabledforeground=self.text_primary,
                                   relief="flat", padx=20, pady=7,
                                   command=self.handle_auth_or_upload,
                                   cursor="hand2", bd=0, highlightthickness=0)
@@ -655,7 +661,7 @@ class LeagueSkinFetcher:
 
         # Input handlers
         self.code_entry.bind('<KeyRelease>', self.on_code_change)
-        self.code_entry.bind('<Return>', lambda event: self.authorize_device())
+        self.code_entry.bind('<Return>', lambda event: self.handle_auth_or_upload())
         self.code_entry.focus_set()
 
         # Initialize progress display
@@ -677,9 +683,50 @@ class LeagueSkinFetcher:
             except Exception:
                 pass
         
-        # Auto-submit once we have 8 chars
-        if len(cleaned) == 8:
-            self.root.after(100, self.authorize_device)
+        # No auto-submit — user must press the button manually
+
+    def _start_spinner(self, base_text="Uploading"):
+        """Start an animated spinner on the auth button"""
+        self._spinner_running = True
+        self._spinner_base_text = base_text
+        self._spinner_index = 0
+        self._tick_spinner()
+
+    def _tick_spinner(self):
+        """Advance the spinner animation by one frame"""
+        if not self._spinner_running:
+            return
+        frame = self._spinner_frames[self._spinner_index % len(self._spinner_frames)]
+        try:
+            self.auth_btn.config(text=f"{frame} {self._spinner_base_text}")
+        except Exception:
+            pass
+        self._spinner_index += 1
+        self.root.after(100, self._tick_spinner)
+
+    def _stop_spinner(self, final_text="Start Upload"):
+        """Stop the spinner and set final button text"""
+        self._spinner_running = False
+        try:
+            self.auth_btn.config(text=final_text)
+        except Exception:
+            pass
+
+    def _safe_update_progress(self, text, step=None, fg=None):
+        """Thread-safe progress update - schedules UI work on the main thread"""
+        def _do():
+            try:
+                self.status_label.config(text=text, fg=fg or self.text_primary)
+                if step is not None:
+                    self.update_step(step)
+            except Exception:
+                pass
+        self.root.after(0, _do)
+        self.log_message(f"Progress: {text}")
+
+    def _safe_update_spinner_text(self, text):
+        """Thread-safe update of the spinner base text (keeps animation going)"""
+        self._spinner_base_text = text
 
     def paste_code(self):
         """Paste code from clipboard"""
@@ -689,8 +736,7 @@ class LeagueSkinFetcher:
             self.code_entry.delete(0, tk.END)
             self.code_entry.insert(0, cleaned)
             self.code_entry.focus_set()
-            if len(cleaned) == 8:
-                self.root.after(100, self.authorize_device)
+            # No auto-submit — user must press the button manually
         except Exception:
             pass
 
@@ -700,11 +746,152 @@ class LeagueSkinFetcher:
         self.code_entry.focus_set()
     
     def handle_auth_or_upload(self):
-        """Authorize if needed, otherwise start upload"""
+        """Single button: authorize if needed, then start upload automatically"""
         if not self.authorized:
-            self.authorize_device()
+            self.authorize_and_upload()
         elif not self.is_fetching:
             self.fetch_skins_threaded()
+
+    def authorize_and_upload(self):
+        """Authorize in a thread, then automatically start upload on success"""
+        # Prevent concurrent auth attempts (button spam protection)
+        if self.is_authorizing:
+            return
+
+        code = self.code_entry.get().strip().replace(' ', '').upper()
+        is_valid, validated_code = SecurityConfig.validate_auth_code(code)
+        if not is_valid:
+            self.status_label.config(text=validated_code, fg=self.error_color)
+            return
+
+        if not self.rate_limiter.can_make_request():
+            wait_time = self.rate_limiter.time_until_next_request()
+            self.status_label.config(text=f"Rate limited. Wait {wait_time}s", fg=self.warning_color)
+            return
+
+        # Lock the button immediately and start spinner
+        self.is_authorizing = True
+        self.auth_btn.config(state='disabled',
+                            disabledforeground=self.text_primary)
+        self._start_spinner("Verifying")
+
+        def _auth_then_upload():
+            # Run authorization
+            self.root.after(0, lambda: self.status_label.config(text="Verifying code...", fg=self.text_secondary))
+            self.log_message(f"Attempting authorization with code: [REDACTED]")
+
+            try:
+                response = requests.post(
+                    self.api_endpoints['auth_verify'],
+                    json={"code": validated_code},
+                    headers={"Content-Type": "application/json"},
+                    timeout=SecurityConfig.REQUEST_TIMEOUT,
+                    verify=SecurityConfig.SSL_VERIFY
+                )
+                self.log_message(f"Verification response status: {response.status_code}")
+
+                if response.status_code == 200:
+                    data = response.json()
+                    self.auth_token = data.get('auth_token')
+                    self.user_id = data.get('user_id')
+                    expires_in = data.get('expires_in', 86400)
+
+                    if self.auth_token and self.user_id:
+                        self.authorized = True
+                        _save_auth_token(self.auth_token, self.user_id, expires_in)
+                        self.log_message("Device authorization successful!")
+
+                        # Update UI and immediately start upload
+                        def _start_upload():
+                            self.progress_container.pack(fill=tk.X, pady=(0, 8), before=self.status_label)
+                            self.update_step(0)
+                            self.status_label.config(text="Authorized! Starting upload...", fg=self.emerald)
+                            self.auth_btn.config(bg=self.emerald,
+                                                activebackground=self.emerald_dim, activeforeground="white",
+                                                disabledforeground="white")
+                            self._stop_spinner()
+                            self._start_spinner("Uploading")
+                            # Auto-start upload
+                            self.root.after(300, self.fetch_skins_threaded)
+                        self.root.after(0, _start_upload)
+                    else:
+                        self.root.after(0, lambda: self.status_label.config(text="Authorization failed - missing token", fg=self.error_color))
+                        self.log_message("Authorization failed: No auth token or user_id received")
+                        self.root.after(0, self._unlock_auth_btn)
+                else:
+                    # Handle all error codes on the main thread
+                    self._handle_auth_error(response)
+
+            except requests.exceptions.ConnectionError:
+                self.root.after(0, lambda: self.status_label.config(text="Server connection error", fg=self.error_color))
+                self.log_message("Connection error: Cannot reach Skinergy server")
+                self.root.after(0, self._unlock_auth_btn)
+            except requests.exceptions.Timeout:
+                self.root.after(0, lambda: self.status_label.config(text="Request timeout", fg=self.error_color))
+                self.log_message("Timeout error: Server took too long to respond")
+                self.root.after(0, self._unlock_auth_btn)
+            except Exception as e:
+                self.root.after(0, lambda: self.status_label.config(text="Authorization error", fg=self.error_color))
+                self.log_message(f"Authorization error: {str(e)}")
+                self.root.after(0, self._unlock_auth_btn)
+
+        threading.Thread(target=_auth_then_upload, daemon=True).start()
+
+    def _unlock_auth_btn(self):
+        """Re-enable the auth button after an auth attempt finishes"""
+        self.is_authorizing = False
+        self._stop_spinner("Start Upload")
+        self.auth_btn.config(state='normal', text='Start Upload', bg=self.btn_primary, fg=self.btn_primary_text,
+                            activebackground=self.btn_primary_hover, activeforeground=self.btn_primary_text)
+
+    def _start_rate_limit_countdown(self, seconds):
+        """Show a countdown on the button while rate-limited"""
+        if seconds <= 0:
+            self._unlock_auth_btn()
+            self.status_label.config(text="Ready — generate a new code and try again", fg=self.text_secondary)
+            return
+        self.auth_btn.config(text=f"Wait {seconds}s...", state='disabled',
+                            disabledforeground=self.text_primary)
+        self.root.after(1000, lambda: self._start_rate_limit_countdown(seconds - 1))
+
+    def _handle_auth_error(self, response):
+        """Handle non-200 auth responses on the main thread"""
+        status = response.status_code
+        if status == 429:
+            # Rate limited by server — show cooldown with countdown
+            retry_after = 60  # default 60s
+            try:
+                retry_after = int(response.headers.get('Retry-After', 60))
+            except (ValueError, TypeError):
+                pass
+            self.root.after(0, lambda: self.status_label.config(
+                text=f"Too many attempts. Please wait...", fg=self.warning_color))
+            self.log_message(f"Rate limited by server (429). Retry after {retry_after}s")
+            # Start a visual countdown on the button
+            self.root.after(0, lambda: self._start_rate_limit_countdown(retry_after))
+            return  # Don't reset auth state or call _unlock — countdown handles it
+        elif status == 404:
+            self.root.after(0, lambda: self.status_label.config(text="Invalid or expired code. Generate a new one.", fg=self.error_color))
+            self.log_message("Authorization failed: Invalid or expired code")
+        elif status == 409:
+            self.root.after(0, lambda: self.status_label.config(text="Code already used. Generate a new one.", fg=self.error_color))
+            self.log_message("Authorization failed: Code already used")
+        elif status == 400:
+            self.root.after(0, lambda: self.status_label.config(text="Invalid code format", fg=self.error_color))
+            self.log_message("Authorization failed: Invalid code format")
+        elif status == 401:
+            self.root.after(0, lambda: self.status_label.config(text="Authorization expired. Enter a new code.", fg=self.error_color))
+            self.log_message("Authorization failed: Token expired")
+        else:
+            self.root.after(0, lambda: self.status_label.config(text=f"Authorization failed (error {status})", fg=self.error_color))
+            self.log_message(f"Authorization failed: HTTP {status}")
+
+        # Reset auth state for all errors
+        _clear_auth_token()
+        self.authorized = False
+        self.auth_token = None
+        self.user_id = None
+        self.root.after(0, self._unlock_auth_btn)
 
     def load_persistent_auth(self):
         """Load saved auth token if available"""
@@ -716,7 +903,7 @@ class LeagueSkinFetcher:
                 self.authorized = True
                 
                 self.status_label.config(text="Ready to upload! Click 'Start Upload' to sync your skins.", fg=self.emerald)
-                self.auth_btn.config(text="Start Upload", bg=self.emerald, fg="white",
+                self.auth_btn.config(text="▶  Start Upload", bg=self.emerald, fg="white",
                                     activebackground=self.emerald_dim, activeforeground="white")
                 self.update_step(0)
                 self.log_message("Loaded persistent authorization")
@@ -966,40 +1153,8 @@ class LeagueSkinFetcher:
                 else:
                     self.status_label.config(text="Authorization failed - missing token", fg=self.error_color)
                     self.log_message("Authorization failed: No auth token or user_id received")
-                    
-            elif response.status_code == 404:
-                self.status_label.config(text="Invalid or expired code", fg=self.error_color)
-                self.log_message("Authorization failed: Invalid or expired code")
-                _clear_auth_token()
-                self.authorized = False
-                self.auth_token = None
-                self.user_id = None
-                self.auth_btn.config(text="Authorize", bg=self.btn_primary, fg=self.btn_primary_text,
-                                    activebackground=self.btn_primary_hover, activeforeground=self.btn_primary_text)
-            elif response.status_code == 409:
-                self.status_label.config(text="Code already used", fg=self.error_color)
-                self.log_message("Authorization failed: Code already used")
-                _clear_auth_token()
-                self.authorized = False
-                self.auth_token = None
-                self.user_id = None
-                self.auth_btn.config(text="Authorize", bg=self.btn_primary, fg=self.btn_primary_text,
-                                    activebackground=self.btn_primary_hover, activeforeground=self.btn_primary_text)
-            elif response.status_code == 400:
-                self.status_label.config(text="Invalid code format", fg=self.error_color)
-                self.log_message("Authorization failed: Invalid code format")
-            elif response.status_code == 401:
-                self.status_label.config(text="Authorization expired. Please enter a new code.", fg=self.error_color)
-                self.log_message("Authorization failed: Token expired")
-                _clear_auth_token()
-                self.authorized = False
-                self.auth_token = None
-                self.user_id = None
-                self.auth_btn.config(text="Authorize", bg=self.btn_primary, fg=self.btn_primary_text,
-                                    activebackground=self.btn_primary_hover, activeforeground=self.btn_primary_text)
             else:
-                self.status_label.config(text="Authorization failed", fg=self.error_color)
-                self.log_message(f"Authorization failed: HTTP {response.status_code}")
+                self._handle_auth_error(response)
                 
         except requests.exceptions.ConnectionError:
             self.status_label.config(text="Server connection error", fg=self.error_color)
@@ -1178,14 +1333,20 @@ class LeagueSkinFetcher:
         return None, None
 
     def update_progress(self, text, step=None):
-        """Update status text and progress steps"""
-        self.status_label.config(text=text, fg=self.text_primary)
+        """Update status text and progress steps (THREAD-SAFE)
+        
+        Schedules all UI work on the main thread via root.after().
+        Safe to call from any thread.
+        """
+        def _do():
+            try:
+                self.status_label.config(text=text, fg=self.text_primary)
+                if step is not None:
+                    self.update_step(step)
+            except Exception:
+                pass
+        self.root.after(0, _do)
         self.log_message(f"Progress: {text}")
-        
-        if step is not None:
-            self.update_step(step)
-        
-        self.root.update_idletasks()
     
     def update_step(self, step_index):
         """Update which step we're on in the progress stepper"""
@@ -1212,6 +1373,63 @@ class LeagueSkinFetcher:
                 if i > 0 and (i - 1) < len(self.step_connectors):
                     self.step_connectors[i - 1].config(bg=self.card_border)
 
+    def _show_popup(self, title, message, icon_text="!", icon_color=None, btn_text="OK"):
+        """Show a custom popup that works reliably with overrideredirect windows.
+        
+        Unlike messagebox which can appear behind the main window and cause freezes,
+        this popup uses the same overrideredirect approach as the main app and is
+        forced to the top with -topmost.
+        """
+        if icon_color is None:
+            icon_color = self.error_color
+
+        popup = tk.Toplevel(self.root)
+        popup.overrideredirect(True)
+        popup.configure(bg=self.card_border)
+        popup.resizable(False, False)
+        popup.transient(self.root)
+
+        pw, ph = 340, 190
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (pw // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (ph // 2)
+        popup.geometry(f"{pw}x{ph}+{x}+{y}")
+
+        popup.attributes('-topmost', True)
+        popup.lift()
+        popup.after(50, popup.focus_force)
+
+        frame = tk.Frame(popup, bg=self.card_bg)
+        frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+
+        content = tk.Frame(frame, bg=self.card_bg)
+        content.pack(fill=tk.BOTH, expand=True, padx=24, pady=20)
+
+        icon_label = tk.Label(content, text=icon_text,
+                             font=("Bahnschrift", 18, "bold"),
+                             fg=icon_color, bg=self.card_bg)
+        icon_label.pack(pady=(0, 6))
+
+        title_label = tk.Label(content, text=title,
+                              font=("Bahnschrift SemiBold", 11),
+                              fg=self.text_primary, bg=self.card_bg)
+        title_label.pack(pady=(0, 4))
+
+        msg_label = tk.Label(content, text=message,
+                            font=("Bahnschrift", 9),
+                            fg=self.text_secondary, bg=self.card_bg,
+                            wraplength=290, justify=tk.CENTER)
+        msg_label.pack(pady=(0, 14))
+
+        close_btn = tk.Button(content, text=btn_text,
+                              font=("Bahnschrift SemiBold", 9),
+                              fg=self.btn_primary_text, bg=self.btn_primary,
+                              activebackground=self.btn_primary_hover,
+                              activeforeground=self.btn_primary_text,
+                              relief="flat", padx=24, pady=5,
+                              command=popup.destroy,
+                              cursor="hand2", bd=0, highlightthickness=0)
+        close_btn.pack()
+
     def show_success_popup(self):
         """Show popup when upload completes"""
         popup = tk.Toplevel(self.root)
@@ -1219,14 +1437,27 @@ class LeagueSkinFetcher:
         popup.configure(bg=self.card_border)
         popup.resizable(False, False)
         
-        # Center on parent
+        # Center on parent — do NOT use grab_set() as it deadlocks with overrideredirect windows
         popup.transient(self.root)
-        popup.grab_set()
         
         pw, ph = 320, 180
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (pw // 2)
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (ph // 2)
         popup.geometry(f"{pw}x{ph}+{x}+{y}")
+
+        # Ensure popup is visible on top (critical for overrideredirect windows)
+        popup.attributes('-topmost', True)
+        popup.lift()
+        popup.after(50, popup.focus_force)
+
+        def _close_popup():
+            try:
+                popup.destroy()
+            except Exception:
+                pass
+            # Reset button to allow re-uploading
+            self.auth_btn.config(state='normal', text="▶  Start Upload", bg=self.emerald, fg="white",
+                                activebackground=self.emerald_dim, activeforeground="white")
         
         # Inner frame with card background
         frame = tk.Frame(popup, bg=self.card_bg)
@@ -1261,7 +1492,7 @@ class LeagueSkinFetcher:
                               activebackground=self.btn_primary_hover,
                               activeforeground=self.btn_primary_text,
                               relief="flat", padx=28, pady=6,
-                              command=popup.destroy,
+                              command=_close_popup,
                               cursor="hand2", bd=0, highlightthickness=0)
         close_btn.pack()
 
@@ -1275,6 +1506,11 @@ class LeagueSkinFetcher:
             self.log_message(f"Rate limited: Please wait {wait_time} seconds")
             return
 
+        # Disable button and start spinner
+        self.auth_btn.config(state='disabled',
+                            disabledforeground="white")
+        self._start_spinner("Uploading")
+
         self.log_message("=== Starting secure skin fetch process ===")
         threading.Thread(target=self.fetch_skins, daemon=True).start()
 
@@ -1286,22 +1522,34 @@ class LeagueSkinFetcher:
 
         self.is_fetching = True
 
+        def _on_error(msg, popup_title="Error", popup_msg=None):
+            """Helper to handle errors: log, show popup, reset button state"""
+            self.log_message(f"✗ {msg}")
+            def _do():
+                self._stop_spinner("▶  Start Upload")
+                self.auth_btn.config(state='normal', text="▶  Start Upload", bg=self.emerald, fg="white",
+                                    activebackground=self.emerald_dim, activeforeground="white")
+                if popup_msg:
+                    self._show_popup(popup_title, popup_msg, icon_text="✕", icon_color=self.error_color)
+            self.root.after(0, _do)
+
         try:
             # Find League client connection info
+            self._safe_update_spinner_text("Connecting")
             self.update_progress("Connecting to League client...", step=1)
 
             port, token = self.get_league_connection_info()
 
             if not port or not token:
-                self.log_message("✗ Could not find League client connection info")
-                self.root.after(0, lambda: messagebox.showerror("Error",
-                                   "League client not detected.\n\nOpen League and retry."))
+                _on_error("Could not find League client connection info",
+                         popup_msg="League client not detected.\n\nOpen League and retry.")
                 self.is_fetching = False
                 return
 
             self.log_message(f"✓ Connected to League client on port {port}")
 
             # Get summoner account information
+            self._safe_update_spinner_text("Fetching account")
             self.update_progress("Getting account information...", step=1)
 
             summoner_url = f"https://127.0.0.1:{port}/lol-summoner/v1/current-summoner"
@@ -1312,9 +1560,8 @@ class LeagueSkinFetcher:
             self.log_message(f"Summoner API response: {response.status_code}")
 
             if response.status_code != 200:
-                self.log_message(f"✗ Failed to get summoner info: {response.status_code}")
-                self.root.after(0, lambda: messagebox.showerror("Error",
-                                   "Failed to connect to League client.\n\nMake sure League is running and try again."))
+                _on_error(f"Failed to get summoner info: {response.status_code}",
+                         popup_msg="Failed to connect to League client.\n\nMake sure League is running and try again.")
                 self.is_fetching = False
                 return
 
@@ -1400,6 +1647,7 @@ class LeagueSkinFetcher:
             self.log_message(f"✓ Connected as: {final_game_name}#{tagline} (Region: {platform_id})")
 
             # Fetch skin collection
+            self._safe_update_spinner_text("Fetching skins")
             self.update_progress("Fetching your skin collection...", step=1)
 
             url = f"https://127.0.0.1:{port}/lol-champions/v1/inventories/{summoner_id}/skins-minimal"
@@ -1407,9 +1655,8 @@ class LeagueSkinFetcher:
             self.log_message(f"Skins API response: {response.status_code}")
 
             if response.status_code != 200:
-                self.log_message(f"✗ Failed to fetch skins: {response.status_code}")
-                self.root.after(0, lambda: messagebox.showerror("Error",
-                                   "Failed to fetch skins from League client.\n\nTry again later."))
+                _on_error(f"Failed to fetch skins: {response.status_code}",
+                         popup_msg="Failed to fetch skins from League client.\n\nTry again later.")
                 self.is_fetching = False
                 return
 
@@ -1430,6 +1677,7 @@ class LeagueSkinFetcher:
                 self.log_message(f"✗ Failed to save skins.json: {e}")
 
             # Fetch loot items
+            self._safe_update_spinner_text("Fetching loot")
             self.update_progress("Fetching loot data...", step=1)
 
             loot_data = []
@@ -1475,10 +1723,11 @@ class LeagueSkinFetcher:
                 self.log_message(f"⚠ Friends fetch error: {str(e)}")
 
             # Upload data to server
+            self._safe_update_spinner_text("Uploading")
             self.update_progress("Uploading data to server...", step=2)
 
             if not self.user_id:
-                self.log_message("✗ User ID not found. Please re-authorize.")
+                _on_error("User ID not found. Please re-authorize.")
                 self.is_fetching = False
                 return
             
@@ -1545,12 +1794,14 @@ class LeagueSkinFetcher:
                             
                             # Update UI on main thread
                             def prompt_reauth():
+                                self._stop_spinner("Start Upload")
                                 self.status_label.config(text="Authorization expired. Please enter a new code.", fg=self.error_color)
-                                self.auth_btn.config(text="Authorize", bg=self.btn_primary, fg=self.btn_primary_text,
+                                self.auth_btn.config(state='normal', text="Start Upload", bg=self.btn_primary, fg=self.btn_primary_text,
                                                     activebackground=self.btn_primary_hover, activeforeground=self.btn_primary_text)
                                 self.update_step(0)
-                                messagebox.showwarning("Re-authorization Required",
-                                    "Your authorization has expired.\n\nPlease get a new code from the Skinergy website and try again.")
+                                self._show_popup("Re-authorization Required",
+                                    "Your authorization has expired.\n\nPlease get a new code from the Skinergy website and try again.",
+                                    icon_text="⚠", icon_color=self.warning_color)
                             self.root.after(0, prompt_reauth)
                             return  # Exit the upload flow entirely
                         elif api_response.status_code >= 500:
@@ -1584,6 +1835,11 @@ class LeagueSkinFetcher:
 
                 if success:
                     self.update_progress("Upload complete! Your skins are now synced.", step=3)
+                    def _on_success():
+                        self._stop_spinner("Done ✓")
+                        self.auth_btn.config(state='normal', text="Done ✓", bg=self.emerald, fg="white",
+                                            activebackground=self.emerald_dim, activeforeground="white")
+                    self.root.after(0, _on_success)
                     self.root.after(2000, self.show_success_popup)
                 else:
                     error_msg = "Upload failed after multiple attempts"
@@ -1593,35 +1849,65 @@ class LeagueSkinFetcher:
                             error_msg = error_data.get('error', error_msg)
                         except Exception:
                             pass
-                    self.root.after(0, lambda: messagebox.showerror("Upload Error",
-                                       f"Failed to upload data.\n\n{error_msg}"))
+                    _on_error(f"Upload failed: {error_msg}",
+                             popup_title="Upload Error",
+                             popup_msg=f"Failed to upload data.\n\n{error_msg}")
                     
             except requests.exceptions.ConnectionError:
-                self.log_message("✗ Connection error - cannot reach Skinergy servers")
-                self.root.after(0, lambda: messagebox.showerror("Connection Error", 
-                    "Cannot connect to Skinergy servers.\n\nCheck your internet connection."))
+                _on_error("Connection error - cannot reach Skinergy servers",
+                         popup_title="Connection Error",
+                         popup_msg="Cannot connect to Skinergy servers.\n\nCheck your internet connection.")
             except requests.exceptions.Timeout:
-                self.log_message("✗ Request timeout - server took too long to respond")
-                self.root.after(0, lambda: messagebox.showerror("Timeout Error", 
-                    "Server took too long to respond.\n\nPlease try again."))
+                _on_error("Request timeout - server took too long to respond",
+                         popup_title="Timeout Error",
+                         popup_msg="Server took too long to respond.\n\nPlease try again.")
             except Exception as e:
-                self.log_message(f"✗ API upload error: {str(e)}")
-                self.root.after(0, lambda: messagebox.showerror("Upload Error", 
-                    "Failed to upload data.\n\nPlease try again."))
+                _on_error(f"API upload error: {str(e)}",
+                         popup_title="Upload Error",
+                         popup_msg="Failed to upload data.\n\nPlease try again.")
 
         except Exception as e:
             error_msg = f"An unexpected error occurred: {str(e)}"
-            self.log_message(f"✗ {error_msg}")
-            self.root.after(0, lambda: messagebox.showerror("Error",
-                               "An error occurred.\n\nPlease check the logs for details."))
+            _on_error(error_msg,
+                     popup_msg="An error occurred.\n\nPlease check the logs for details.")
 
         finally:
             self.is_fetching = False
 
     def on_closing(self):
-        """Handle window close event"""
+        """Handle window close event - ensure full cleanup"""
         self.status_monitor_running = False
-        self.root.destroy()
+        self.is_fetching = False
+
+        # Close the log window if open
+        try:
+            if getattr(self, 'log_window', None) and self.log_window.winfo_exists():
+                self.log_window.destroy()
+        except Exception:
+            pass
+
+        # Shut down all logging handlers so the log file is released
+        try:
+            root_logger = logging.getLogger()
+            for handler in root_logger.handlers[:]:
+                try:
+                    handler.flush()
+                    handler.close()
+                except Exception:
+                    pass
+                root_logger.removeHandler(handler)
+        except Exception:
+            pass
+
+        # Destroy the tkinter window
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+        # Force exit the process to ensure nothing hangs
+        # (background threads blocked on network requests can keep the process alive)
+        os._exit(0)
 
 
 if __name__ == "__main__":

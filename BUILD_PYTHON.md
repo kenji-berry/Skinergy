@@ -18,7 +18,7 @@
    python build_exe.py
    ```
 
-3. Find your exe in `dist/SkinergyUploader.exe`
+3. Find your exe in `dist/SkinergyDesktop.exe`
 
 ## Notes
 
@@ -29,5 +29,6 @@
 ## Files
 
 - `get_skins_gui.py` - main app
-- `security_config.py` - security config and rate limiting
+- `security_config.py` - security stuff
+- `config.py` - api config
 - `build_exe.py` - build script
