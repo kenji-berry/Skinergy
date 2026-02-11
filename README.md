@@ -1,39 +1,30 @@
-# Skinergy
+<img src="https://www.skinergy.lol/frag-logo-long-yellow.png" alt="Skinergy Logo" height="150">
 
-> **This repo contains the source code for the Skinergy Desktop Uploader.** You can download the latest build from [Releases](https://github.com/kenji-berry/Skinergy/releases) or build it yourself — see [BUILD_PYTHON.md](BUILD_PYTHON.md).
+> **This repo contains the source code for the Skinergy Desktop Uploader.** You can download the latest stable build from [Releases](https://github.com/kenji-berry/Skinergy/releases) or build it yourself — see [BUILD_PYTHON.md](BUILD_PYTHON.md).
 
-***Currently in **alpha release**, with core functionality live and ongoing improvements guided by user feedback.***
+***Skinergy is now in Full Release (v1.0).*** *While the core experience is stable, we are constantly refining features based on community feedback.*
 
-**Skinergy** is a League of Legends **skin collection and comparison app with real-time social features**.
-Players can upload their owned skins, track their collection, and see other users' activity live without refreshing the page.
-
-Skinergy allows multiple users to create and compare skin sets in real time, blending personal collection tracking with shared social interaction.
+**Skinergy** is a League of Legends **skin collection and comparison app with real-time social features**. 
+Players can upload their owned skins, track their collection milestones, and see friends' activity live without refreshing the page. Skinergy blends personal collection tracking with shared social interaction, allowing teams to coordinate their outfits before they even hit the Rift.
 
 ---
 
 ## Features
 
 - **Skin Collection Management**
-  Upload and track your owned skins using Riot's Data Dragon (ddragon), along with API integrations and approved scraping sources.
-  Skinergy also provides enhanced skin metadata and statistics that are not available in the standard League client, offering deeper insight into your collection.
+  Upload and track your collection using Riot's Data Dragon (ddragon) and integrated API sources. Skinergy provides enhanced metadata and rarity statistics not found in the standard League client.
 
-- **Live Sessions and Skin Matching Algorithm**
-  Users can create or join live sessions with up to five participants, reflecting the size of a League team.
-  Each participant selects their preferred roles and champions, and the session host chooses a filtering mode:
-  - Strict filtering includes only primary-role champions (for example, Poppy as support)
-  - Flexible filtering allows off-role champions (for example, Poppy as jungle)
-
-  The session is powered by WebSockets, which provide continuous live updates. This means participants can see each other's availability in real time, including ready, unready and away states, without needing to refresh the page.
-  The algorithm then analyses all skins owned by the session participants and generates permutations of matching skin sets.
-  For example, if all five users own different Infernal skins, that would form a valid permutation.
-  These permutations are scored and ranked based on relevance, theme cohesion and user preferences, helping players discover the strongest team-wide skin combinations.
-  Results can be filtered and refined instantly within the session.
+- **Live Sessions & Skin Matching Algorithm**
+  Create or join live sessions with up to five participants. Using WebSockets for real-time synchronization, the host can filter for:
+  - **Strict Mode:** Only primary-role champions (e.g., Poppy as a Support).
+  - **Flexible Mode:** Includes off-role champions (e.g., Poppy as a Jungler).
+  
+  Our algorithm analyzes the combined inventories of all participants to suggest matching themes (e.g., a full team of *Infernal* or *Star Guardian* skins), ranked by theme cohesion and user preference. Results are updated instantly as participants change their selections.
 
 - **Secure Skin Uploader (Desktop App)**
-  - Downloadable Tkinter-based desktop app for uploading skins
-  - Each upload generates a unique code tied to your account, ensuring uploads are securely linked to your ID
-  - Automatically updates or inserts new skins since your last upload
-  - Open source within this repository for transparency and trust. Even though the code is public, the unique code system ensures it cannot be exploited
+  - **Transparency:** Open-source Python/Tkinter app.
+  - **Security:** Each upload is tied to a unique account-linked code to prevent unauthorized data spoofing.
+  - **Efficiency:** Automatically identifies and adds new skins acquired since your last upload.
 
 ---
 
@@ -41,37 +32,41 @@ Skinergy allows multiple users to create and compare skin sets in real time, ble
 
 The uploader source code lives in this repo. See [BUILD_PYTHON.md](BUILD_PYTHON.md) for build instructions.
 
-| File | What it does |
+| File | Function |
 |---|---|
-| `get_skins_gui.py` | Main app (tkinter GUI) |
-| `security_config.py` | API config, input validation, rate limiting |
+| `get_skins_gui.py` | Main Application (Tkinter GUI) |
+| `security_config.py` | API configuration, input validation, and rate limiting |
 | `build_exe.py` | PyInstaller build script |
 | `requirements-desktop.txt` | Python dependencies |
 | `icon.ico` | App icon |
-| `public/frag-logo.png` | Square logo |
-| `public/frag-logo-long.png` | Wide logo |
 
-> **Windows Defender warning:** SmartScreen may flag the exe because it's not signed with a certificate. This is normal for independent apps. Click **"More info"** then **"Run anyway"**. The source code is right here so you can verify it yourself.
+> **Windows Defender warning:** Because the executable is not signed with a paid certificate, Windows SmartScreen may flag it. Click **"More info"** then **"Run anyway"**. You can verify the safety of the tool by reviewing the source code in this repository.
+
+---
+
+## Support & Feedback
+
+If you encounter bugs, performance issues, or have suggestions for new features, please reach out!
+
+* **Email:** [support@skinergy.lol](mailto:support@skinergy.lol)
+
+*Disclaimer: Skinergy isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing League of Legends.*
 
 ---
 
 ## Tech Stack
 - **Frontend:** Next.js, React, TailwindCSS
-- **Backend:** Supabase (PostgreSQL + Realtime)
+- **Backend:** Supabase (PostgreSQL + Realtime WebSockets)
 - **Desktop Uploader:** Python (Tkinter)
-- **Data Sources:** Riot's Data Dragon (ddragon), APIs, and approved scraping sources
-
----
-
-## Deployment
-- Deployed on Vercel with the custom domain [skinergy.lol](https://www.skinergy.lol/).
-
----
-
-## Notes
-- Currently in **alpha release**, with ongoing improvements guided by user feedback.
+- **Data Sources:** Riot's Data Dragon (ddragon), CDragon, and approved community APIs.
 
 ---
 
 ## Author
-Independently designed, developed, and deployed by **Kenji Berry**.
+Designed, developed, and deployed by [**Kenji Berry**](https://github.com/kenji-berry).
+
+## Special Thanks
+A huge thank you to the following for helping improve Skinergy:
+- Arielle - for UI and clarity suggestions
+- [Armin](https://github.com/ashahnami) - for structure and UX suggestions
+- And everyone else who contributed feedback, testing, or ideas
