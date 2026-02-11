@@ -192,11 +192,24 @@ class LeagueSkinFetcher:
         # Remove default Windows title bar for custom one
         self.root.overrideredirect(True)
         
-        # Window size and position (center on screen)
-        self.win_width = 480
-        self.win_height = 460
+        # Screen-based scale: bigger screens get a larger UI (reference 1920px width)
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
+        ref_width = 1920
+        ref_height = 1080
+        scale_w = screen_w / ref_width
+        scale_h = screen_h / ref_height
+        self.scale = min(max(min(scale_w, scale_h), 1.0), 2.0)  # clamp between 1.0 and 2.0
+        
+        def _s(n):
+            """Scale a dimension by the screen scale factor."""
+            return max(1, int(round(n * self.scale)))
+        
+        self._s = _s
+        
+        # Window size and position (center on screen)
+        self.win_width = _s(480)
+        self.win_height = _s(460)
         x = (screen_w - self.win_width) // 2
         y = (screen_h - self.win_height) // 2
         self.root.geometry(f"{self.win_width}x{self.win_height}+{x}+{y}")
@@ -226,13 +239,13 @@ class LeagueSkinFetcher:
         self.divider = "#252830"
         self.hover_bg = "#242830"
 
-        # Fonts
-        self.title_font = ("Bahnschrift SemiBold", 13)
-        self.heading_font = ("Bahnschrift SemiBold", 10)
-        self.body_font = ("Bahnschrift", 9)
-        self.small_font = ("Bahnschrift Light", 8)
-        self.mono_font = ("Consolas", 14)
-        self.label_font = ("Bahnschrift SemiBold", 8)
+        # Fonts (scaled)
+        self.title_font = ("Bahnschrift SemiBold", self._s(13))
+        self.heading_font = ("Bahnschrift SemiBold", self._s(10))
+        self.body_font = ("Bahnschrift", self._s(9))
+        self.small_font = ("Bahnschrift Light", self._s(8))
+        self.mono_font = ("Consolas", self._s(14))
+        self.label_font = ("Bahnschrift SemiBold", self._s(8))
 
         self.root.configure(bg=self.bg_color)
 
@@ -315,7 +328,8 @@ class LeagueSkinFetcher:
             square_path = self._find_file(search_dirs, 'frag-logo.png')
             if square_path:
                 img = Image.open(square_path).convert("RGBA")
-                small = img.resize((22, 22), Image.LANCZOS)
+                sz = self._s(22)
+                small = img.resize((sz, sz), Image.LANCZOS)
                 self._logo_photo_small = ImageTk.PhotoImage(small)
             
             # Wide logo (frag-logo-long.png) for titlebar
@@ -323,7 +337,7 @@ class LeagueSkinFetcher:
             if long_path:
                 img_long = Image.open(long_path).convert("RGBA")
                 aspect = img_long.width / img_long.height
-                tb_h = 18
+                tb_h = self._s(18)
                 tb_w = int(tb_h * aspect)
                 resized_tb = img_long.resize((tb_w, tb_h), Image.LANCZOS)
                 self._logo_photo_long_tb = ImageTk.PhotoImage(resized_tb)
@@ -416,7 +430,7 @@ class LeagueSkinFetcher:
         inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
 
         # Titlebar
-        titlebar = tk.Frame(inner, bg=self.titlebar_bg, height=44)
+        titlebar = tk.Frame(inner, bg=self.titlebar_bg, height=self._s(44))
         titlebar.pack(fill=tk.X, side=tk.TOP)
         titlebar.pack_propagate(False)
 
@@ -426,20 +440,20 @@ class LeagueSkinFetcher:
 
         # Logo + brand group (left side)
         brand_frame = tk.Frame(titlebar, bg=self.titlebar_bg)
-        brand_frame.pack(side=tk.LEFT, padx=(16, 0), fill=tk.Y)
+        brand_frame.pack(side=tk.LEFT, padx=(self._s(16), 0), fill=tk.Y)
         brand_frame.bind("<Button-1>", self._start_drag)
         brand_frame.bind("<B1-Motion>", self._on_drag)
 
         if self._logo_photo_long_tb:
             logo_label = tk.Label(brand_frame, image=self._logo_photo_long_tb, 
                                  bg=self.titlebar_bg, bd=0)
-            logo_label.pack(side=tk.LEFT, pady=13)
+            logo_label.pack(side=tk.LEFT, pady=self._s(13))
             logo_label.bind("<Button-1>", self._start_drag)
             logo_label.bind("<B1-Motion>", self._on_drag)
         elif self._logo_photo_small:
             logo_label = tk.Label(brand_frame, image=self._logo_photo_small, 
                                  bg=self.titlebar_bg, bd=0)
-            logo_label.pack(side=tk.LEFT, pady=11)
+            logo_label.pack(side=tk.LEFT, pady=self._s(11))
             logo_label.bind("<Button-1>", self._start_drag)
             logo_label.bind("<B1-Motion>", self._on_drag)
 
@@ -448,18 +462,18 @@ class LeagueSkinFetcher:
         controls_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Minimize button
-        min_btn = tk.Label(controls_frame, text="─", font=("Bahnschrift Light", 10),
+        min_btn = tk.Label(controls_frame, text="─", font=("Bahnschrift Light", self._s(10)),
                           fg=self.text_muted, bg=self.titlebar_bg, 
-                          width=5, cursor="hand2")
+                          width=self._s(5), cursor="hand2")
         min_btn.pack(side=tk.LEFT, fill=tk.Y)
         min_btn.bind("<Enter>", lambda e: min_btn.config(bg=self.hover_bg, fg=self.text_secondary))
         min_btn.bind("<Leave>", lambda e: min_btn.config(bg=self.titlebar_bg, fg=self.text_muted))
         min_btn.bind("<Button-1>", lambda e: self._minimize_window())
 
         # Close button
-        close_btn = tk.Label(controls_frame, text="✕", font=("Bahnschrift Light", 10),
+        close_btn = tk.Label(controls_frame, text="✕", font=("Bahnschrift Light", self._s(10)),
                             fg=self.text_muted, bg=self.titlebar_bg,
-                            width=5, cursor="hand2")
+                            width=self._s(5), cursor="hand2")
         close_btn.pack(side=tk.LEFT, fill=tk.Y)
         close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#DC2626", fg="white"))
         close_btn.bind("<Leave>", lambda e: close_btn.config(bg=self.titlebar_bg, fg=self.text_muted))
@@ -469,36 +483,36 @@ class LeagueSkinFetcher:
 
         # Main content
         main_frame = tk.Frame(inner, bg=self.bg_color)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=28, pady=(20, 18))
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=self._s(28), pady=(self._s(20), self._s(18)))
 
         # Hero section
         hero_frame = tk.Frame(main_frame, bg=self.bg_color)
-        hero_frame.pack(fill=tk.X, pady=(0, 18))
+        hero_frame.pack(fill=tk.X, pady=(0, self._s(18)))
 
         hero_title = tk.Label(hero_frame, text="Skin Data Uploader",
-                             font=("Bahnschrift SemiBold", 14),
+                             font=("Bahnschrift SemiBold", self._s(14)),
                              fg=self.text_primary, bg=self.bg_color)
         hero_title.pack(anchor=tk.W)
 
         hero_subtitle = tk.Label(hero_frame, text="Sync your League collection with Skinergy",
-                                font=("Bahnschrift Light", 9),
+                                font=("Bahnschrift Light", self._s(9)),
                                 fg=self.text_secondary, bg=self.bg_color)
-        hero_subtitle.pack(anchor=tk.W, pady=(4, 0))
+        hero_subtitle.pack(anchor=tk.W, pady=(self._s(4), 0))
 
         # Auth card
         self.auth_card = tk.Frame(main_frame, bg=self.card_bg,
                                   highlightthickness=1,
                                   highlightbackground=self.card_border,
                                   highlightcolor=self.card_border)
-        self.auth_card.pack(fill=tk.X, pady=(0, 14))
+        self.auth_card.pack(fill=tk.X, pady=(0, self._s(14)))
 
         card_inner = tk.Frame(self.auth_card, bg=self.card_bg)
-        card_inner.pack(fill=tk.X, padx=18, pady=16)
+        card_inner.pack(fill=tk.X, padx=self._s(18), pady=self._s(16))
 
         section_label = tk.Label(card_inner, text="AUTHORIZATION CODE",
                                 font=self.label_font,
                                 fg=self.text_muted, bg=self.card_bg)
-        section_label.pack(anchor=tk.W, pady=(0, 10))
+        section_label.pack(anchor=tk.W, pady=(0, self._s(10)))
 
         input_row = tk.Frame(card_inner, bg=self.card_bg)
         input_row.pack(fill=tk.X)
@@ -506,28 +520,28 @@ class LeagueSkinFetcher:
         # Code entry
         entry_frame = tk.Frame(input_row, bg=self.input_border, 
                               highlightthickness=0)
-        entry_frame.pack(side=tk.LEFT, padx=(0, 10))
+        entry_frame.pack(side=tk.LEFT, padx=(0, self._s(10)))
         
         entry_inner = tk.Frame(entry_frame, bg=self.input_bg)
         entry_inner.pack(padx=1, pady=1)
 
         self.code_entry = tk.Entry(entry_inner,
                                   font=self.mono_font,
-                                  width=10,
+                                  width=self._s(10),
                                   justify=tk.CENTER,
                                   bg=self.input_bg,
                                   fg=self.text_primary,
                                   insertbackground='#FFFFFF',
                                   relief="flat",
-                                  bd=8,
+                                  bd=self._s(8),
                                   highlightthickness=0)
         self.code_entry.pack()
 
         # Clear button
-        clear_btn = tk.Label(input_row, text="✕", font=("Bahnschrift", 8),
+        clear_btn = tk.Label(input_row, text="✕", font=("Bahnschrift", self._s(8)),
                             fg=self.text_muted, bg=self.card_bg,
-                            cursor="hand2", padx=2)
-        clear_btn.pack(side=tk.LEFT, padx=(0, 8))
+                            cursor="hand2", padx=self._s(2))
+        clear_btn.pack(side=tk.LEFT, padx=(0, self._s(8)))
         clear_btn.bind("<Enter>", lambda e: clear_btn.config(fg=self.text_secondary))
         clear_btn.bind("<Leave>", lambda e: clear_btn.config(fg=self.text_muted))
         clear_btn.bind("<Button-1>", lambda e: self.clear_code())
@@ -537,30 +551,30 @@ class LeagueSkinFetcher:
         btn_group.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         paste_btn = tk.Button(btn_group, text="Paste",
-                              font=("Bahnschrift", 8),
+                              font=("Bahnschrift", self._s(8)),
                               fg=self.text_secondary, bg=self.surface,
                               activebackground=self.hover_bg,
                               activeforeground=self.text_primary,
-                              relief="flat", padx=12, pady=7,
+                              relief="flat", padx=self._s(12), pady=self._s(7),
                               command=self.paste_code, cursor="hand2",
                               bd=0, highlightthickness=1,
                               highlightbackground=self.card_border,
                               highlightcolor=self.card_border)
-        paste_btn.pack(side=tk.LEFT, padx=(0, 8))
+        paste_btn.pack(side=tk.LEFT, padx=(0, self._s(8)))
 
         self.auth_btn = tk.Button(btn_group, text="Start Upload",
-                                  font=("Bahnschrift SemiBold", 9),
+                                  font=("Bahnschrift SemiBold", self._s(9)),
                                   fg=self.btn_primary_text,
                                   bg=self.btn_primary,
                                   activebackground=self.btn_primary_hover,
                                   activeforeground=self.btn_primary_text,
                                   disabledforeground=self.text_primary,
-                                  relief="flat", padx=20, pady=7,
+                                  relief="flat", padx=self._s(20), pady=self._s(7),
                                   command=self.handle_auth_or_upload,
                                   cursor="hand2", bd=0, highlightthickness=0)
         self.auth_btn.pack(side=tk.LEFT)
 
-        tk.Frame(card_inner, bg=self.divider, height=1).pack(fill=tk.X, pady=(12, 10))
+        tk.Frame(card_inner, bg=self.divider, height=1).pack(fill=tk.X, pady=(self._s(12), self._s(10)))
 
         # League client status indicator
         status_row = tk.Frame(card_inner, bg=self.card_bg)
@@ -569,26 +583,27 @@ class LeagueSkinFetcher:
         status_dot_frame = tk.Frame(status_row, bg=self.card_bg)
         status_dot_frame.pack(side=tk.LEFT)
 
-        self.status_dot = tk.Canvas(status_dot_frame, width=8, height=8, 
+        self._status_dot_size = self._s(8)
+        self.status_dot = tk.Canvas(status_dot_frame, width=self._status_dot_size, height=self._status_dot_size, 
                                     bg=self.card_bg, highlightthickness=0)
-        self.status_dot.pack(side=tk.LEFT, pady=2)
-        self.status_dot.create_oval(1, 1, 7, 7, fill=self.text_muted, outline="")
+        self.status_dot.pack(side=tk.LEFT, pady=self._s(2))
+        self.status_dot.create_oval(1, 1, self._status_dot_size - 1, self._status_dot_size - 1, fill=self.text_muted, outline="")
 
         self.client_status = tk.Label(status_row,
                                       text="  League Client: Checking...",
-                                      font=("Bahnschrift Light", 8),
+                                      font=("Bahnschrift Light", self._s(8)),
                                       fg=self.text_muted, bg=self.card_bg,
                                       anchor=tk.W)
         self.client_status.pack(side=tk.LEFT)
 
         # Progress stepper
         self.progress_container = tk.Frame(main_frame, bg=self.bg_color)
-        self.progress_container.pack(fill=tk.X, pady=(0, 14))
+        self.progress_container.pack(fill=tk.X, pady=(0, self._s(14)))
 
         progress_header = tk.Label(self.progress_container, text="PROGRESS",
                                   font=self.label_font,
                                   fg=self.text_muted, bg=self.bg_color)
-        progress_header.pack(anchor=tk.W, pady=(0, 12))
+        progress_header.pack(anchor=tk.W, pady=(0, self._s(12)))
 
         # Progress steps
         self.steps = [
@@ -607,8 +622,8 @@ class LeagueSkinFetcher:
         for i, step in enumerate(self.steps):
             # Connector line BEFORE each step (except the first)
             if i > 0:
-                connector = tk.Frame(timeline_frame, bg=self.card_border, height=2)
-                connector.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=(0, 16))
+                connector = tk.Frame(timeline_frame, bg=self.card_border, height=self._s(2))
+                connector.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=(0, self._s(16)))
                 self.step_connectors.append(connector)
 
             step_container = tk.Frame(timeline_frame, bg=self.bg_color)
@@ -616,33 +631,33 @@ class LeagueSkinFetcher:
 
             # Number badge (text-based, crisp at any size)
             num_label = tk.Label(step_container, text=step["num"],
-                                font=("Bahnschrift SemiBold", 9),
+                                font=("Bahnschrift SemiBold", self._s(9)),
                                 fg=self.text_muted, bg=self.card_border,
-                                width=3, height=1,
+                                width=self._s(3), height=1,
                                 relief="flat", bd=0)
             num_label.pack()
             self.step_numbers.append(num_label)
 
             # Step label below
             step_label = tk.Label(step_container, text=step["label"],
-                                 font=("Bahnschrift Light", 7),
+                                 font=("Bahnschrift Light", self._s(7)),
                                  fg=self.text_muted, bg=self.bg_color)
-            step_label.pack(pady=(4, 0))
+            step_label.pack(pady=(self._s(4), 0))
             self.step_labels.append(step_label)
 
         # Status message
         self.status_label = tk.Label(main_frame, text="",
-                                    font=("Bahnschrift", 9),
+                                    font=("Bahnschrift", self._s(9)),
                                     fg=self.emerald, bg=self.bg_color,
-                                    anchor=tk.W, wraplength=400)
-        self.status_label.pack(fill=tk.X, pady=(6, 0))
+                                    anchor=tk.W, wraplength=self._s(400))
+        self.status_label.pack(fill=tk.X, pady=(self._s(6), 0))
 
         # Bottom bar
         bottom_bar = tk.Frame(main_frame, bg=self.bg_color)
-        bottom_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(6, 0))
+        bottom_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(self._s(6), 0))
 
         logs_btn = tk.Label(bottom_bar, text="View Logs",
-                           font=("Bahnschrift Light", 8),
+                           font=("Bahnschrift Light", self._s(8)),
                            fg=self.text_muted, bg=self.bg_color,
                            cursor="hand2")
         logs_btn.pack(side=tk.RIGHT)
@@ -650,8 +665,8 @@ class LeagueSkinFetcher:
         logs_btn.bind("<Leave>", lambda e: logs_btn.config(fg=self.text_muted))
         logs_btn.bind("<Button-1>", lambda e: self.open_logs())
 
-        version_label = tk.Label(bottom_bar, text="v2.0",
-                                font=("Bahnschrift Light", 7),
+        version_label = tk.Label(bottom_bar, text="v2.2",
+                                font=("Bahnschrift Light", self._s(7)),
                                 fg=self.text_muted, bg=self.bg_color)
         version_label.pack(side=tk.LEFT)
 
@@ -958,7 +973,12 @@ class LeagueSkinFetcher:
 
         self.log_window = tk.Toplevel(self.root)
         self.log_window.title("Application Logs")
-        self.log_window.geometry("640x480")
+        log_w, log_h = self._s(640), self._s(480)
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        log_x = (screen_w - log_w) // 2
+        log_y = (screen_h - log_h) // 2
+        self.log_window.geometry(f"{log_w}x{log_h}+{log_x}+{log_y}")
         self.log_window.configure(bg=self.bg_color)
         self.log_window.overrideredirect(True)
         
@@ -966,7 +986,7 @@ class LeagueSkinFetcher:
         self.log_window.config(highlightthickness=1, highlightbackground=self.card_border, highlightcolor=self.card_border)
         
         # Custom titlebar - matches main app
-        titlebar = tk.Frame(self.log_window, bg=self.titlebar_bg, height=44)
+        titlebar = tk.Frame(self.log_window, bg=self.titlebar_bg, height=self._s(44))
         titlebar.pack(fill=tk.X, side=tk.TOP)
         titlebar.pack_propagate(False)
         
@@ -976,30 +996,30 @@ class LeagueSkinFetcher:
         
         # Logo in titlebar (left side) - matches main app
         brand_frame = tk.Frame(titlebar, bg=self.titlebar_bg)
-        brand_frame.pack(side=tk.LEFT, padx=(16, 0), fill=tk.Y)
+        brand_frame.pack(side=tk.LEFT, padx=(self._s(16), 0), fill=tk.Y)
         brand_frame.bind("<Button-1>", lambda e: self._start_log_drag(e))
         brand_frame.bind("<B1-Motion>", lambda e: self._on_log_drag(e))
         
         if self._logo_photo_long_tb:
             logo_label = tk.Label(brand_frame, image=self._logo_photo_long_tb, 
                                  bg=self.titlebar_bg, bd=0)
-            logo_label.pack(side=tk.LEFT, pady=13)
+            logo_label.pack(side=tk.LEFT, pady=self._s(13))
             logo_label.bind("<Button-1>", lambda e: self._start_log_drag(e))
             logo_label.bind("<B1-Motion>", lambda e: self._on_log_drag(e))
         elif self._logo_photo_small:
             logo_label = tk.Label(brand_frame, image=self._logo_photo_small, 
                                  bg=self.titlebar_bg, bd=0)
-            logo_label.pack(side=tk.LEFT, pady=11)
+            logo_label.pack(side=tk.LEFT, pady=self._s(11))
             logo_label.bind("<Button-1>", lambda e: self._start_log_drag(e))
             logo_label.bind("<B1-Motion>", lambda e: self._on_log_drag(e))
         
         # Close button (X) in titlebar - matches main app style
         close_x = tk.Label(titlebar,
                           text="✕",
-                          font=("Bahnschrift Light", 10),
+                          font=("Bahnschrift Light", self._s(10)),
                           fg=self.text_muted,
                           bg=self.titlebar_bg,
-                          width=5,
+                          width=self._s(5),
                           cursor="hand2")
         close_x.pack(side=tk.RIGHT, fill=tk.Y)
         close_x.bind("<Button-1>", lambda e: self.log_window.destroy())
@@ -1011,15 +1031,15 @@ class LeagueSkinFetcher:
         
         # Main content area
         content_frame = tk.Frame(self.log_window, bg=self.bg_color)
-        content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=self._s(20), pady=self._s(16))
         
         # "Application Logs" title below titlebar
         title_label = tk.Label(content_frame,
                               text="Application Logs",
-                              font=("Bahnschrift SemiBold", 13),
+                              font=("Bahnschrift SemiBold", self._s(13)),
                               fg=self.text_primary,
                               bg=self.bg_color)
-        title_label.pack(anchor=tk.W, pady=(0, 12))
+        title_label.pack(anchor=tk.W, pady=(0, self._s(12)))
         
         # Log text area with scrollbar
         text_container = tk.Frame(content_frame, bg=self.card_bg,
@@ -1036,12 +1056,12 @@ class LeagueSkinFetcher:
         self.log_text = tk.Text(text_container,
                                bg=self.card_bg,
                                fg=self.text_secondary,
-                               font=("Consolas", 9),
+                               font=("Consolas", self._s(9)),
                                relief="flat",
                                bd=0,
                                wrap=tk.WORD,
-                               padx=12,
-                               pady=12,
+                               padx=self._s(12),
+                               pady=self._s(12),
                                highlightthickness=0,
                                yscrollcommand=scrollbar.set)
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -1049,18 +1069,18 @@ class LeagueSkinFetcher:
 
         # Copy All button at bottom
         bottom_frame = tk.Frame(content_frame, bg=self.bg_color)
-        bottom_frame.pack(fill=tk.X, pady=(16, 0))
+        bottom_frame.pack(fill=tk.X, pady=(self._s(16), 0))
         
         copy_btn = tk.Button(bottom_frame,
                             text="Copy All",
-                            font=("Bahnschrift SemiBold", 9),
+                            font=("Bahnschrift SemiBold", self._s(9)),
                             fg=self.btn_primary_text,
                             bg=self.btn_primary,
                             activebackground=self.btn_primary_hover,
                             activeforeground=self.btn_primary_text,
                             relief="flat",
-                            padx=16,
-                            pady=8,
+                            padx=self._s(16),
+                            pady=self._s(8),
                             command=self._copy_logs,
                             cursor="hand2",
                             bd=0,
@@ -1220,8 +1240,9 @@ class LeagueSkinFetcher:
         """Update the League client status label"""
         try:
             self.status_dot.delete("all")
+            sd = getattr(self, '_status_dot_size', 8)
             if is_running:
-                self.status_dot.create_oval(1, 1, 7, 7, fill=self.emerald, outline="")
+                self.status_dot.create_oval(1, 1, sd - 1, sd - 1, fill=self.emerald, outline="")
                 if summoner_name:
                     self.client_status.config(
                         text=f"  League Client: Connected - {summoner_name}",
@@ -1230,7 +1251,7 @@ class LeagueSkinFetcher:
                     self.client_status.config(
                         text="  League Client: Connected", fg=self.emerald)
             else:
-                self.status_dot.create_oval(1, 1, 7, 7, fill=self.error_color, outline="")
+                self.status_dot.create_oval(1, 1, sd - 1, sd - 1, fill=self.error_color, outline="")
                 self.client_status.config(text="  League Client: Not detected", fg=self.error_color)
         except Exception:
             pass
@@ -1389,7 +1410,7 @@ class LeagueSkinFetcher:
         popup.resizable(False, False)
         popup.transient(self.root)
 
-        pw, ph = 340, 190
+        pw, ph = self._s(340), self._s(190)
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (pw // 2)
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (ph // 2)
         popup.geometry(f"{pw}x{ph}+{x}+{y}")
@@ -1402,30 +1423,30 @@ class LeagueSkinFetcher:
         frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
 
         content = tk.Frame(frame, bg=self.card_bg)
-        content.pack(fill=tk.BOTH, expand=True, padx=24, pady=20)
+        content.pack(fill=tk.BOTH, expand=True, padx=self._s(24), pady=self._s(20))
 
         icon_label = tk.Label(content, text=icon_text,
-                             font=("Bahnschrift", 18, "bold"),
+                             font=("Bahnschrift", self._s(18), "bold"),
                              fg=icon_color, bg=self.card_bg)
-        icon_label.pack(pady=(0, 6))
+        icon_label.pack(pady=(0, self._s(6)))
 
         title_label = tk.Label(content, text=title,
-                              font=("Bahnschrift SemiBold", 11),
+                              font=("Bahnschrift SemiBold", self._s(11)),
                               fg=self.text_primary, bg=self.card_bg)
-        title_label.pack(pady=(0, 4))
+        title_label.pack(pady=(0, self._s(4)))
 
         msg_label = tk.Label(content, text=message,
-                            font=("Bahnschrift", 9),
+                            font=("Bahnschrift", self._s(9)),
                             fg=self.text_secondary, bg=self.card_bg,
-                            wraplength=290, justify=tk.CENTER)
-        msg_label.pack(pady=(0, 14))
+                            wraplength=self._s(290), justify=tk.CENTER)
+        msg_label.pack(pady=(0, self._s(14)))
 
         close_btn = tk.Button(content, text=btn_text,
-                              font=("Bahnschrift SemiBold", 9),
+                              font=("Bahnschrift SemiBold", self._s(9)),
                               fg=self.btn_primary_text, bg=self.btn_primary,
                               activebackground=self.btn_primary_hover,
                               activeforeground=self.btn_primary_text,
-                              relief="flat", padx=24, pady=5,
+                              relief="flat", padx=self._s(24), pady=self._s(5),
                               command=popup.destroy,
                               cursor="hand2", bd=0, highlightthickness=0)
         close_btn.pack()
@@ -1440,7 +1461,7 @@ class LeagueSkinFetcher:
         # Center on parent — do NOT use grab_set() as it deadlocks with overrideredirect windows
         popup.transient(self.root)
         
-        pw, ph = 320, 180
+        pw, ph = self._s(320), self._s(180)
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (pw // 2)
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (ph // 2)
         popup.geometry(f"{pw}x{ph}+{x}+{y}")
@@ -1464,34 +1485,34 @@ class LeagueSkinFetcher:
         frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
         
         content = tk.Frame(frame, bg=self.card_bg)
-        content.pack(fill=tk.BOTH, expand=True, padx=24, pady=24)
+        content.pack(fill=tk.BOTH, expand=True, padx=self._s(24), pady=self._s(24))
         
         # Success icon
         icon_label = tk.Label(content, text="✓", 
-                             font=("Bahnschrift", 20, "bold"),
+                             font=("Bahnschrift", self._s(20), "bold"),
                              fg=self.emerald, bg=self.card_bg)
-        icon_label.pack(pady=(0, 8))
+        icon_label.pack(pady=(0, self._s(8)))
         
         # Success message
         msg_label = tk.Label(content, text="Upload Complete",
-                            font=("Bahnschrift SemiBold", 12),
+                            font=("Bahnschrift SemiBold", self._s(12)),
                             fg=self.text_primary, bg=self.card_bg)
-        msg_label.pack(pady=(0, 4))
+        msg_label.pack(pady=(0, self._s(4)))
         
         # Description
         desc_label = tk.Label(content,
                              text="Your skin data has been synced.",
-                             font=("Bahnschrift", 9),
+                             font=("Bahnschrift", self._s(9)),
                              fg=self.text_secondary, bg=self.card_bg)
-        desc_label.pack(pady=(0, 16))
+        desc_label.pack(pady=(0, self._s(16)))
         
         # Close button
         close_btn = tk.Button(content, text="Done",
-                              font=("Bahnschrift SemiBold", 9),
+                              font=("Bahnschrift SemiBold", self._s(9)),
                               fg=self.btn_primary_text, bg=self.btn_primary,
                               activebackground=self.btn_primary_hover,
                               activeforeground=self.btn_primary_text,
-                              relief="flat", padx=28, pady=6,
+                              relief="flat", padx=self._s(28), pady=self._s(6),
                               command=_close_popup,
                               cursor="hand2", bd=0, highlightthickness=0)
         close_btn.pack()
