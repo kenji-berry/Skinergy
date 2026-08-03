@@ -9,6 +9,20 @@ Players can upload their owned skins, track their collection milestones, and see
 
 ---
 
+## Screenshots
+
+![Overview Stats](https://github.com/user-attachments/assets/4cae0b87-c9ad-4bdd-a209-821230a7fcfb)
+
+![Individual Skin Stats](https://github.com/user-attachments/assets/af63ff75-a0c4-4b52-90a4-4d8d528b0bc4)
+
+![Matching Rooms](https://github.com/user-attachments/assets/13bad3ca-314d-43de-9901-761e4423c863)
+
+![Matching](https://github.com/user-attachments/assets/42145d57-351b-47bd-8170-4f79071f5292)
+
+![Profile](https://github.com/user-attachments/assets/6085ea85-2389-4d20-8170-f5660dc845f3)
+
+---
+
 ## Features
 
 - **Skin Collection Management**
