@@ -11,15 +11,30 @@ Players can upload their owned skins, track their collection milestones, and see
 
 ## Screenshots
 
-![Overview Stats](https://github.com/user-attachments/assets/4cae0b87-c9ad-4bdd-a209-821230a7fcfb)
+<h3 align="center">Overview Stats</h3>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/4cae0b87-c9ad-4bdd-a209-821230a7fcfb" width="600">
+</p>
 
-![Individual Skin Stats](https://github.com/user-attachments/assets/af63ff75-a0c4-4b52-90a4-4d8d528b0bc4)
+<h3 align="center">Individual Skin Stats</h3>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/af63ff75-a0c4-4b52-90a4-4d8d528b0bc4" width="600">
+</p>
 
-![Matching Rooms](https://github.com/user-attachments/assets/13bad3ca-314d-43de-9901-761e4423c863)
+<h3 align="center">Matching Rooms</h3>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/13bad3ca-314d-43de-9901-761e4423c863" width="600">
+</p>
 
-![Matching](https://github.com/user-attachments/assets/42145d57-351b-47bd-8170-4f79071f5292)
+<h3 align="center">Matching</h3>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/42145d57-351b-47bd-8170-4f79071f5292" width="600">
+</p>
 
-![Profile](https://github.com/user-attachments/assets/6085ea85-2389-4d20-8170-f5660dc845f3)
+<h3 align="center">Profile</h3>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/6085ea85-2389-4d20-8170-f5660dc845f3" width="600">
+</p>
 
 ---
 
