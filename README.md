@@ -1,4 +1,5 @@
 
+
 <img src="https://www.skinergy.lol/frag-logo-long-yellow.png" alt="Skinergy Logo" height="150">
 
 > **This repo contains the source code for the Skinergy Desktop Uploader.** You can download the latest stable build from [Releases](https://github.com/kenji-berry/Skinergy/releases) or build it yourself — see [BUILD_PYTHON.md](BUILD_PYTHON.md).
@@ -29,7 +30,7 @@ Players can upload their owned skins, track their collection milestones, and see
 
 <h3 align="center">Matching</h3>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/42145d57-351b-47bd-8170-4f79071f5292">
+  <img width="2122" height="1847" alt="matching" src="https://github.com/user-attachments/assets/56a43f69-fcb3-451e-8669-549aff804dd8" />
 </p>
 
 <h3 align="center">Profile</h3>
