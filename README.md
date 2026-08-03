@@ -4,7 +4,7 @@
 
 > **This repo contains the source code for the Skinergy Desktop Uploader.** You can download the latest stable build from [Releases](https://github.com/kenji-berry/Skinergy/releases) or build it yourself — see [BUILD_PYTHON.md](BUILD_PYTHON.md).
 
-***Skinergy is now in Full Release (v1.0).*** *While the core experience is stable, we are constantly refining features based on community feedback.*
+***Skinergy is now in Full Release pending a RIOT API key approval (v1.0).*** *While the core experience is stable, we are constantly refining features based on community feedback.*
 
 **Skinergy** is a League of Legends **skin collection and comparison app with real-time social features**. 
 Players can upload their owned skins, track their collection milestones, and see friends' activity live without refreshing the page. Skinergy blends personal collection tracking with shared social interaction, allowing teams to coordinate their outfits before they even hit the Rift.
@@ -12,6 +12,7 @@ Players can upload their owned skins, track their collection milestones, and see
 ---
 
 ## Screenshots
+### Note that the screenshots look off center due to chrome devtools screenshots
 
 <h3 align="center">Overview Stats</h3>
 <p align="center">
