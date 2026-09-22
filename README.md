@@ -1,5 +1,6 @@
 
 
+
 <img src="https://www.skinergy.lol/frag-logo-long-yellow.png" alt="Skinergy Logo" height="150">
 
 > **This repo contains the source code for the Skinergy Desktop Uploader.** You can download the latest stable build from [Releases](https://github.com/kenji-berry/Skinergy/releases) or build it yourself — see [BUILD_PYTHON.md](BUILD_PYTHON.md).
@@ -16,17 +17,21 @@ Players can upload their owned skins, track their collection milestones, and see
 
 <h3 align="center">Overview Stats</h3>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/4cae0b87-c9ad-4bdd-a209-821230a7fcfb">
+  <img width="1903" height="2751" alt="stats" src="https://github.com/user-attachments/assets/261982c4-df14-403e-865d-b4cdeff133b6" />
+
 </p>
+
 
 <h3 align="center">Individual Skin Stats</h3>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/af63ff75-a0c4-4b52-90a4-4d8d528b0bc4">
+  <img width="1905" height="1882" alt="data" src="https://github.com/user-attachments/assets/e6a35b67-177e-47cf-8cff-dc2d9fae2b3f" />
+
 </p>
 
 <h3 align="center">Matching Rooms</h3>
 <p align="center">
-  <img width="1909" height="914" alt="session" src="https://github.com/user-attachments/assets/7915a9c4-9e66-4911-8fc7-49d32cdcaca8" />
+  <img width="1909" height="914" alt="session" src="https://github.com/user-attachments/assets/d932de92-ef09-4ae0-8872-90b22a159d7a" />
+
 </p>
 
 <h3 align="center">Matching</h3>
@@ -36,7 +41,7 @@ Players can upload their owned skins, track their collection milestones, and see
 
 <h3 align="center">Profile</h3>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/6085ea85-2389-4d20-8170-f5660dc845f3">
+  <img width="1927" height="1609" alt="profile" src="https://github.com/user-attachments/assets/5753dc00-40d4-466c-abaa-a24c1fe47ec5" />
 </p>
 
 ---
