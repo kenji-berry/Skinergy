@@ -13,7 +13,6 @@ Players can upload their owned skins, track their collection milestones, and see
 ---
 
 ## Screenshots
-### Note that the screenshots look off center due to chrome devtools screenshots
 
 <h3 align="center">Overview Stats</h3>
 <p align="center">
